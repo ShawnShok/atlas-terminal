@@ -1,6 +1,20 @@
 export type PanelView =
+  | "dashboard"
   | "security"
+  | "chart"
+  | "financials"
   | "market"
+  | "movers"
+  | "watchlist"
+  | "news"
+  | "events"
+  | "earnings"
+  | "options"
+  | "scanner"
+  | "analytics"
+  | "alerts"
+  | "notes"
+  | "settings"
   | "activity"
   | "system"
   | "shortcuts";
@@ -169,8 +183,8 @@ export const DEFAULT_WORKSPACES: WorkspaceLayout[] = [
         id: "research-secondary",
         direction: "vertical",
         ratio: 52,
-        first: panel("research-market", "Market pulse", "market"),
-        second: panel("research-system", "System status", "system"),
+        first: panel("research-market", "Live news", "news"),
+        second: panel("research-system", "Core watchlist", "watchlist"),
       },
     },
   },
@@ -183,8 +197,8 @@ export const DEFAULT_WORKSPACES: WorkspaceLayout[] = [
       id: "monitor-root",
       direction: "vertical",
       ratio: 58,
-      first: panel("monitor-market", "Market pulse", "market"),
-      second: panel("monitor-activity", "Session activity", "activity"),
+      first: panel("monitor-market", "Market dashboard", "dashboard"),
+      second: panel("monitor-activity", "Market movers", "movers"),
     },
   },
   {

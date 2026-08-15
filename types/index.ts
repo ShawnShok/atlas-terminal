@@ -25,3 +25,27 @@ export type {
   TickerDetails,
   Trade,
 } from "./market";
+
+export type {
+  CatalystTimelineBundle,
+  CatalystTimelineEntry,
+  ComparisonResearchBundle,
+  ComparisonSecurity,
+  EventsResearchBundle,
+  FinancialRatioPoint,
+  FinancialResearchBundle,
+  FinancialTimeframe,
+  MarketMovers,
+  MarketSnapshotRow,
+  SecurityClassification,
+  NewsResearchBundle,
+  NormalizedFinancialPeriod,
+  OptionChainBundle,
+  SecurityResearchBundle,
+  TerminalApiFailure,
+  TerminalApiMeta,
+  TerminalApiResponse,
+  TerminalApiSuccess,
+  TickerSearchResult,
+  WatchlistResearchBundle,
+} from "./research";

@@ -9,3 +9,4 @@ export {
   MOCK_TRADES,
 } from "./market-data";
 export { MockMarketDataService } from "./service";
+export { getMockResearchService, MockResearchService } from "./research-service";

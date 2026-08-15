@@ -20,7 +20,7 @@ async function render() {
   );
 }
 
-test("server-renders the ATLAS Phase 1 terminal shell", async () => {
+test("server-renders the integrated ATLAS research terminal shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -28,12 +28,14 @@ test("server-renders the ATLAS Phase 1 terminal shell", async () => {
   const html = await response.text();
   assert.match(html, /<title>ATLAS Terminal — Private Financial Research<\/title>/i);
   assert.match(html, /ATLAS/);
-  assert.match(html, /MOCK MODE/);
-  assert.match(html, /Security workspace foundation/);
+  assert.match(html, /SECURITY RESEARCH|LOADING SECURITY/);
   assert.match(html, /SYNC TICKER/);
+  assert.match(html, /SERVER NORMALIZED/);
+  assert.match(html, /NO TRADE EXECUTION/);
   assert.match(html, /\/og\.png/);
   assert.match(html, /https:\/\/atlas\.local\/og\.png/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+  assert.doesNotMatch(html, /PHASE 1|intentionally not enabled/i);
   assert.doesNotMatch(html, /postgresql:\/\//i);
 });
 

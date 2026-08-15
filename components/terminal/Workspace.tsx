@@ -10,6 +10,8 @@ interface WorkspaceProps {
   activePanelId: string;
   maximizedPanelId: string | null;
   activity: string[];
+  recentTickers: readonly string[];
+  comparisonSymbols?: readonly string[];
   onActivate: (panelId: string) => void;
   onClose: (panelId: string) => void;
   onMaximize: (panelId: string | null) => void;
@@ -29,11 +31,14 @@ export function Workspace(props: WorkspaceProps) {
     return (
       <div className="workspace-root is-maximized">
         <WorkspacePanel
+          key={`${maximized.id}:${maximized.ticker}`}
           panel={maximized}
           active
           maximized
           canClose={panels.length > 1}
           activity={props.activity}
+          recentTickers={props.recentTickers}
+          comparisonSymbols={props.comparisonSymbols}
           onActivate={() => props.onActivate(maximized.id)}
           onClose={() => props.onClose(maximized.id)}
           onMaximize={() => props.onMaximize(null)}
@@ -81,11 +86,14 @@ function WorkspaceNodeView({
   if (node.type === "panel") {
     return (
       <WorkspacePanel
+        key={`${node.id}:${node.ticker}`}
         panel={node}
         active={props.activePanelId === node.id}
         maximized={false}
         canClose={panelCount > 1}
         activity={props.activity}
+        recentTickers={props.recentTickers}
+        comparisonSymbols={props.comparisonSymbols}
         onActivate={() => props.onActivate(node.id)}
         onClose={() => props.onClose(node.id)}
         onMaximize={() => props.onMaximize(node.id)}

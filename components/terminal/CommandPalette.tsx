@@ -12,6 +12,9 @@ import {
   X,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useResearchData } from "@/hooks/useResearchData";
+import type { TickerSearchResult } from "@/types";
 
 interface CommandItem {
   id: string;
@@ -19,28 +22,28 @@ interface CommandItem {
   title: string;
   detail: string;
   group: "SECURITIES" | "FUNCTIONS" | "WORKSPACES" | "WATCHLISTS";
-  phase: number;
+  source: "ATLAS" | "MASSIVE" | "MOCK" | "PERSONAL";
   keywords: string;
 }
 
 const COMMANDS: CommandItem[] = [
-  { id: "nvda", command: "NVDA", title: "NVDA", detail: "NVIDIA Corporation", group: "SECURITIES", phase: 2, keywords: "nvidia ai semis stock" },
-  { id: "aapl", command: "AAPL", title: "AAPL", detail: "Apple Inc.", group: "SECURITIES", phase: 2, keywords: "apple stock" },
-  { id: "tsla", command: "TSLA", title: "TSLA", detail: "Tesla, Inc.", group: "SECURITIES", phase: 2, keywords: "tesla automotive stock" },
-  { id: "amd", command: "AMD", title: "AMD", detail: "Advanced Micro Devices", group: "SECURITIES", phase: 2, keywords: "semiconductors stock" },
-  { id: "market", command: "MARKET", title: "Market pulse", detail: "Open the Phase 1 mock market monitor", group: "FUNCTIONS", phase: 1, keywords: "market indices breadth movers" },
-  { id: "scan", command: "SCAN", title: "Stock scanner", detail: "Configurable research scanner", group: "FUNCTIONS", phase: 6, keywords: "scanner momentum breakout" },
-  { id: "news", command: "NVDA NEWS", title: "Ticker news", detail: "Benzinga ticker headline feed", group: "FUNCTIONS", phase: 3, keywords: "news benzinga headlines" },
-  { id: "options", command: "NVDA OPT", title: "Options terminal", detail: "Chain, Greeks, and research analytics", group: "FUNCTIONS", phase: 5, keywords: "options chain opt greeks" },
-  { id: "events", command: "NVDA EVENTS", title: "Corporate events", detail: "TMX catalyst timeline", group: "FUNCTIONS", phase: 4, keywords: "events earnings calendar tmx" },
-  { id: "research", command: "LAYOUT RESEARCH", title: "Research workspace", detail: "Three-panel default layout", group: "WORKSPACES", phase: 1, keywords: "layout panels research" },
-  { id: "monitor", command: "LAYOUT MONITOR", title: "Monitor workspace", detail: "Market and activity layout", group: "WORKSPACES", phase: 1, keywords: "layout monitor" },
-  { id: "focus", command: "LAYOUT FOCUS", title: "Focus workspace", detail: "Single security context", group: "WORKSPACES", phase: 1, keywords: "layout focus" },
-  { id: "core", command: "WATCH", title: "CORE", detail: "Example personal watchlist · not created", group: "WATCHLISTS", phase: 2, keywords: "watchlist core" },
+  { id: "market", command: "MARKET", title: "Market pulse", detail: "Curated U.S. equity universe", group: "FUNCTIONS", source: "ATLAS", keywords: "market indices breadth movers" },
+  { id: "movers", command: "MOVERS", title: "Market movers", detail: "Top Massive gainers and losers", group: "FUNCTIONS", source: "ATLAS", keywords: "gainers losers volume gaps" },
+  { id: "scan", command: "SCAN", title: "Stock scanner", detail: "Configurable research scanner", group: "FUNCTIONS", source: "ATLAS", keywords: "scanner momentum breakout" },
+  { id: "news", command: "NVDA NEWS", title: "Ticker news", detail: "Benzinga ticker headline feed", group: "FUNCTIONS", source: "ATLAS", keywords: "news benzinga headlines" },
+  { id: "options", command: "NVDA OPT", title: "Options terminal", detail: "Chain, Greeks, and research analytics", group: "FUNCTIONS", source: "ATLAS", keywords: "options chain opt greeks" },
+  { id: "events", command: "NVDA EVENTS", title: "Corporate events", detail: "TMX catalyst timeline", group: "FUNCTIONS", source: "ATLAS", keywords: "events earnings calendar tmx" },
+  { id: "financials", command: "NVDA FIN", title: "Company financials", detail: "Statements, ratios, and calculated growth", group: "FUNCTIONS", source: "ATLAS", keywords: "fundamentals statements ratios" },
+  { id: "earnings", command: "EARNINGS", title: "Earnings center", detail: "Upcoming reported earnings catalysts", group: "FUNCTIONS", source: "ATLAS", keywords: "earnings calendar" },
+  { id: "compare", command: "COMPARE NVDA AMD AVGO", title: "Company comparison", detail: "Normalized performance and fundamentals", group: "FUNCTIONS", source: "ATLAS", keywords: "comparison relative performance" },
+  { id: "research", command: "LAYOUT RESEARCH", title: "Research workspace", detail: "Three-panel research layout", group: "WORKSPACES", source: "ATLAS", keywords: "layout panels research" },
+  { id: "monitor", command: "LAYOUT MONITOR", title: "Monitor workspace", detail: "Dashboard and movers layout", group: "WORKSPACES", source: "ATLAS", keywords: "layout monitor" },
+  { id: "focus", command: "LAYOUT FOCUS", title: "Focus workspace", detail: "Single security context", group: "WORKSPACES", source: "ATLAS", keywords: "layout focus" },
+  { id: "core", command: "WATCH", title: "CORE", detail: "Default research watchlist", group: "WATCHLISTS", source: "PERSONAL", keywords: "watchlist core" },
 ];
 
 function scoreItem(item: CommandItem, query: string) {
-  if (!query) return item.phase === 1 ? 80 : 40;
+  if (!query) return item.group === "FUNCTIONS" ? 80 : 50;
   const source = `${item.command} ${item.title} ${item.detail} ${item.keywords}`.toLowerCase();
   const needle = query.toLowerCase().trim();
   if (item.command.toLowerCase() === needle) return 120;
@@ -65,13 +68,24 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debouncedQuery = useDebouncedValue(query.trim(), 180);
+  const tickerSearch = useResearchData<readonly TickerSearchResult[]>("search", { q: debouncedQuery }, { enabled: debouncedQuery.length >= 2 });
+  const securityResults: readonly CommandItem[] = (tickerSearch.data ?? []).map((item) => ({
+    id: `security:${item.symbol}:${item.exchange ?? "unknown"}`,
+    command: item.symbol,
+    title: item.symbol,
+    detail: item.name,
+    group: "SECURITIES",
+    source: tickerSearch.meta?.mode === "mock" ? "MOCK" : tickerSearch.meta ? "MASSIVE" : "ATLAS",
+    keywords: `${item.name} ${item.exchange ?? ""} ${item.assetType ?? ""}`,
+  }));
 
-  const results = useMemo(() => COMMANDS
+  const results = useMemo(() => [...securityResults, ...COMMANDS]
     .map((item) => ({ item, score: scoreItem(item, query) }))
     .filter((entry) => entry.score >= 0)
     .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title))
     .slice(0, 8)
-    .map((entry) => entry.item), [query]);
+    .map((entry) => entry.item), [query, securityResults]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,7 +132,7 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
               }
               if (event.key === "Enter") {
                 event.preventDefault();
-                run(query || results[activeIndex]?.command);
+                run(results[activeIndex]?.command ?? query);
               }
             }}
           />
@@ -151,7 +165,7 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
                 <span className="result-icon"><Icon size={15} /></span>
                 <span className="result-main"><strong>{item.title}</strong><small>{item.detail}</small></span>
                 <span className="result-command">{item.command}</span>
-                <span className={item.phase === 1 ? "phase-badge is-ready" : "phase-badge"}>{item.phase === 1 ? "READY" : `P${item.phase}`}</span>
+                <span className="phase-badge is-ready">{item.source}</span>
                 <ArrowRight size={13} />
               </button>
             );

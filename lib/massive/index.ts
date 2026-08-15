@@ -11,7 +11,13 @@ export type {
   MassiveRequest,
   MassiveRequestDiagnostic,
 } from "./client";
-export { getMassiveMarketDataService } from "./factory";
+export {
+  getMassiveClient,
+  getMassiveMarketDataService,
+  getMassiveResearchService,
+} from "./factory";
+export { MassiveResearchService } from "./research-service";
+export { DEFAULT_RESEARCH_UNIVERSE } from "./research-service";
 export { MassiveMarketDataService } from "./service";
 export type {
   AggregateBarsInput,

@@ -19,9 +19,7 @@ export function getPrismaClient(): PrismaClient {
     datasources: { db: { url: requireDatabaseUrl() } },
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.__atlasPrisma = client;
-  }
+  globalForPrisma.__atlasPrisma = client;
 
   return client;
 }

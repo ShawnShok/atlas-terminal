@@ -1,72 +1,67 @@
 # ATLAS Terminal
 
-ATLAS Terminal is a private, keyboard-first financial research workstation. This repository currently implements **Phase 1 — Foundation** from the product brief: the terminal shell, command language, multi-panel workspace, server-only Massive client, normalized market-data contracts, cache and error layers, deterministic mock mode, and a PostgreSQL/Prisma schema.
+ATLAS Terminal is a private, keyboard-first financial research workstation. The repository now contains the integrated research workflows delivered across Phases 1–8: the terminal shell, live or deterministic market data, stocks and charts, news, corporate events, financials, options research, scanners, advanced analytics, and PostgreSQL-backed personal research records.
 
-It is research software. It does not place trades, make guaranteed recommendations, or present mock data as live market data.
+It is research software. It does not place trades, route orders, guarantee outcomes, or turn correlations into recommendations. Mock data is always labeled, and live modules retain provider freshness and quality metadata.
 
-## Phase 1 status
+## Production handoff status
 
-Implemented:
+| Area | Delivered behavior | Current boundary |
+| --- | --- | --- |
+| Terminal shell | Three workspaces, nested horizontal/vertical panels, resize, close, maximize, active-panel routing, ticker synchronization, command palette, activity log, and keyboard shortcuts. | Workspace state is session-local unless saved through the personal API. |
+| Stocks and charts | Ticker search, quote/security overview, movers, candlestick/line/area charts, volume, ranges from `1D` through `MAX`, and explicit intervals from `1m` through `1W`. | Intraday access and freshness follow the active Massive entitlement. |
+| Indicators | SMA, EMA, cumulative VWAP, RSI, MACD, Bollinger Bands, ATR, and relative volume computed from normalized bars. | Calculations are research aids and depend on the returned history window. |
+| Watchlist | Sort, keyboard navigation, drag reorder, remove, and live snapshot refresh for the default `CORE` list. | The visible watchlist is session-local today. Durable watchlist CRUD exists at `/api/personal` but is not yet connected to this panel. |
+| News | Benzinga headline feed, ticker/all-market/watchlist scope, article selection, sector, category, date and keyword filtering, and ticker navigation. | Availability and latency depend on the Benzinga entitlement; the UI polls rather than streams. Sector is a disclosed local classification derived from Massive SIC metadata. |
+| Events and earnings | TMX corporate-event and earnings views with watchlist, ticker, horizon, event type, market-cap, sector and date filters, plus countdown and event detail. | TMX supplies a date, not a structured event time. Earnings estimates/timing are not invented when absent. |
+| Financials | Income statement, balance sheet, cash flow, ratios, and locally calculated growth views with annual, quarterly, and supported TTM periods. | Statements and ratios require the relevant entitlement. Missing fields and incomparable periods remain unavailable. |
+| Options | Expiration/strike/volume/open-interest filters, call/put chain, contract detail and price history, Greeks, put/call ratios, current-chain activity ranking, and a research strategy builder with payoff, break-even, max gain/loss, and combined Greeks. | No trade execution. Historical IV rank/percentile and historical activity baselines are not currently populated. |
+| Scanner | Built-in research presets, configurable conditions, sorting, news/event enrichment, and explicit missing-field handling. | Scans run over a curated U.S. research universe, not every listed security. Custom presets in the current panel are session-local; scanner persistence exists at `/api/personal`. |
+| Advanced analytics | Heatmap, current breadth, heuristic chart patterns, news-versus-price views, catalyst timeline, and normalized comparison for up to four securities. | Heatmap/breadth are curated-universe snapshots. News/event proximity is association only, never claimed causation. |
+| Personal research | PostgreSQL-backed notes, alert definitions, and settings UI; API support for watchlists, saved workspaces, and scanners. | Notes/alerts/settings require PostgreSQL. Alert definitions do not run without a separately deployed scheduler/worker. |
 
-- Dense dark terminal shell with a collapsible navigation rail and market strip.
-- Three default workspace layouts: Research, Monitor, and Focus.
-- Nested horizontal/vertical panel splits, drag or keyboard resizing, close, maximize, panel view selection, per-panel ticker entry, and synchronized ticker mode.
-- `/` and `Cmd/Ctrl + K` command entry, fuzzy suggestions, keyboard navigation, and a deterministic parser.
-- Commands for ticker overview, chart, news, options, financials, events, market, movers, scanner, watchlist, earnings, and comparisons.
-- Explicit future-phase results: a recognized command never pretends an unbuilt module exists.
-- Provider-neutral types for quotes, securities, news, events, options, financials, bars, trades, and snapshots.
-- Server-only Massive transport with bounded retries, timeouts, `Retry-After` support, request coalescing, cache fallback, Zod validation, and sanitized diagnostics.
-- Deterministic mock provider using the same contracts as the real provider.
-- Bounded in-memory cache behind an asynchronous `CacheStore` interface. TTLs are configurable and a distributed Redis implementation can replace it without changing service consumers.
-- PostgreSQL Prisma schema and initial SQL migration for settings, watchlists, scanners, alerts, workspaces, cached security metadata, and private notes.
-- Unit coverage for the command grammar and workspace-tree invariants, plus a production-render smoke test.
-
-Not implemented yet: live stock screens, charts, watchlist persistence UI, Benzinga news screens, TMX event screens, options, scanners, heatmaps, alerts, portfolio tools, or trading. The navigation and parser reserve these workflows for later phases without fabricating functionality.
-
-## Architecture
+## Architecture and trust boundaries
 
 ```text
-Terminal UI / React client components
-  ├─ serializable workspace tree + reducer
-  └─ command palette → pure command parser
-
-Server-only service boundary
-  └─ MarketDataService
-      ├─ MockMarketDataService
-      └─ MassiveMarketDataService
-          └─ MassiveClient
-              ├─ bounded retries + timeout
-              ├─ in-flight request deduplication
-              ├─ CacheStore
-              └─ Zod response adapters
-
-Provider-neutral domain types
-  └─ Quote, TickerDetails, NewsArticle, CorporateEvent,
-     OptionContract, FinancialStatement, AggregateBar, Trade, Snapshot
-
-Persistence foundation
-  └─ Prisma → PostgreSQL
+React terminal shell
+  ├─ production Sign in with ChatGPT owner gate
+  ├─ workspace tree, commands, keyboard and panel state
+  ├─ GET /api/research ── normalized read-only research facade
+  │    ├─ deterministic mock research service
+  │    └─ Massive research services
+  │         ├─ stocks, aggregates, snapshots, options and financials
+  │         ├─ Benzinga news
+  │         └─ TMX corporate events
+  │              └─ server-only Massive client
+  │                   ├─ timeout + bounded retries + Retry-After
+  │                   ├─ in-flight request coalescing
+  │                   ├─ bounded cache + stale fallback
+  │                   └─ Zod validation + provider adapters
+  └─ /api/personal ── state-changing personal-data boundary
+       └─ Prisma ── PostgreSQL
 ```
 
 Important boundaries:
 
-- Modules that can access credentials import `server-only`.
-- The browser never receives `MASSIVE_API_KEY` or a PostgreSQL connection string.
-- The Massive client only accepts root-relative, typed endpoint paths and rejects credential query parameters. It is not an arbitrary URL proxy.
-- Raw provider responses are validated and adapted before they can reach UI code.
-- Mock mode is explicit. Real mode with a missing key fails as a configuration error; it does not silently substitute synthetic prices.
-- Personal notes are represented only in the local PostgreSQL schema and are never sent to data providers.
-
-Brand strings are centralized in `lib/brand.ts`. The social preview image in `public/og.png` must be regenerated when the brand changes.
+- Provider and database credentials remain server-only. Never expose them through `NEXT_PUBLIC_`, `VITE_`, client bundles, URLs, diagnostics, or committed files.
+- `/api/research` is a read-only, provider-neutral facade. The browser does not call Massive directly.
+- `/api/personal` is the only application boundary for personal state. Notes are not sent to Massive, Benzinga, TMX, or browser-only storage.
+- Provider responses are validated and adapted before UI code receives them. API responses use `Cache-Control: private, no-store`.
+- Mock mode is explicit. Live mode with no provider key fails configuration rather than silently substituting synthetic prices.
+- Production pages and APIs require the authenticated Sites user header before provider or database work. The private deployment remains the outer access-control boundary.
+- Personal records are scoped to a non-reversible identifier derived from the signed-in email. Local development uses the `primary` fixture profile.
+- Keep the deployed application behind private hosting access controls. Server-only secrets protect credentials, but they are not a substitute for deployment authentication and authorization.
 
 ## Requirements
 
 - Node.js 22.13 or newer
 - pnpm 11 or newer
-- PostgreSQL 15+ for persistence work
-- A Massive API key only when using real provider mode
+- One Massive API key for live data
+- PostgreSQL 15+ only when durable personal research is required
 
-## Install and run locally
+The same Massive API key is used for every entitled Massive, Benzinga, and TMX dataset. Separate product-specific keys are not required; additional plan entitlements may still be required.
+
+## Install and run
 
 ```bash
 pnpm install
@@ -74,69 +69,191 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-Open the local URL printed by the development server. The checked-in environment example starts in deterministic mock mode and does not consume Massive API calls.
+Open the URL printed by the development server. The checked-in example selects deterministic mock mode, so the first run does not consume live provider calls.
+
+### Mock mode
+
+```dotenv
+USE_MOCK_DATA=true
+```
+
+Mock mode uses deterministic fixtures behind the same normalized interfaces as live mode. Response metadata reports `mode: "mock"` and indicative quality.
+
+### Live mode
+
+Set these values only in `.env.local` or the deployment's secret manager:
+
+```dotenv
+USE_MOCK_DATA=false
+MASSIVE_API_KEY=<server-only-secret>
+MASSIVE_API_BASE_URL=https://api.massive.com
+```
+
+Do not commit a real key. If a credential is ever copied into source control, logs, or another unintended location, revoke and rotate it before deployment.
 
 ### Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `USE_MOCK_DATA` | Yes | `true` selects deterministic local fixtures; `false` selects Massive. |
-| `MASSIVE_API_KEY` | Real mode | Private provider credential; server-only. |
-| `MASSIVE_API_BASE_URL` | No | Central provider base URL, default `https://api.massive.com`. |
-| `DATABASE_URL` | Database work | PostgreSQL connection string used only when Prisma is invoked. |
+| `USE_MOCK_DATA` | Yes | `true` selects deterministic fixtures; `false` selects Massive. |
+| `MASSIVE_API_KEY` | Live mode | The single server-only Massive credential. |
+| `MASSIVE_API_BASE_URL` | No | Provider origin; defaults to `https://api.massive.com`. |
 | `MASSIVE_REQUEST_TIMEOUT_MS` | No | Per-attempt provider timeout. |
-| `MASSIVE_MAX_RETRIES` | No | Bounded retry count, capped during validation. |
+| `MASSIVE_MAX_RETRIES` | No | Bounded retry count. |
 | `MASSIVE_RETRY_BASE_DELAY_MS` | No | Base exponential-backoff delay. |
 | `MEMORY_CACHE_MAX_ENTRIES` | No | Process-local cache bound. |
-| `CACHE_TTL_*_MS` | No | Data-class-specific freshness and stale-fallback windows. |
+| `CACHE_TTL_*_MS` | No | Freshness and stale-fallback windows by data class. |
+| `DATABASE_URL` | Personal data | Server-side PostgreSQL connection string for `/api/personal`. |
 
-Never use `NEXT_PUBLIC_` or `VITE_` prefixes for secrets. `.env*` files are ignored; `.env.example` is the only committed environment file.
+The current cache implementation is bounded process memory. Its asynchronous interface can be replaced with a distributed cache without changing research consumers.
+
+## Research API
+
+`GET /api/research` is the browser's read-only market-research boundary. It validates tickers and ranges, chooses mock or live services server-side, and returns a common envelope:
+
+```json
+{
+  "ok": true,
+  "data": {},
+  "meta": {
+    "mode": "live",
+    "source": "massive",
+    "quality": "delayed",
+    "asOf": "provider timestamp"
+  }
+}
+```
+
+Errors are sanitized and include a request ID. The route accepts at most 100 requested symbols, and comparison output is capped at four securities.
+
+| `kind` | Main inputs | Result |
+| --- | --- | --- |
+| `dashboard` | none | ETF proxy snapshots, movers, Benzinga headlines, and upcoming TMX events. |
+| `search` | `q` | Ticker search results. |
+| `security`, `chart` | `ticker`, `range`, `interval` | Quote, company details, and adjusted aggregate bars. |
+| `movers` | none | Gainers/losers bundle. |
+| `watchlist` | `symbols` | Snapshot bundle for a caller-supplied or default symbol list. |
+| `classifications` | `symbols` | Bounded Massive reference metadata with local SIC-to-sector classification for filters. |
+| `market`, `heatmap`, `breadth`, `scanner` | optional `symbols` | Snapshots for the curated research universe. |
+| `news` | `ticker`, `all`, `after`, `category`, `q` | Benzinga news bundle. |
+| `events`, `earnings` | `ticker`, `all`, `from`, `to`, `type` | TMX event bundle; earnings fixes the event type. |
+| `options` | `ticker`, `expiration` | Normalized option chain and freshness metadata. |
+| `option-chart` | `contract`, `range`, `interval` | Validated option-contract aggregate bars. |
+| `financials` | `ticker` | Statements, ratios, and entitlement-aware availability. |
+| `compare` | `symbols`, `range`, `interval` | Quotes, history, company detail, and ratios for up to four tickers. |
+| `timeline` | `ticker` | Benzinga news, TMX events, and daily price moves of at least 4%. |
+
+Examples:
+
+```text
+/api/research?kind=security&ticker=NVDA&range=1Y
+/api/research?kind=news&ticker=AMD
+/api/research?kind=compare&symbols=NVDA,AMD,AVGO
+```
+
+The chart route supports ranges `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `3Y`, `5Y`, and `MAX`, with a strict range/interval matrix from `1m` through `1W`. Incompatible combinations such as `MAX` with minute bars are rejected, and each upstream history request is capped at 5,000 bars.
+
+## Personal-data API
+
+`/api/personal` owns private, state-changing data. All operations use the `resource` query parameter and the normalized `{ ok, data }` or `{ ok: false, error }` envelope.
+
+| Resource | GET | POST | PATCH | DELETE |
+| --- | --- | --- | --- | --- |
+| `status` | Verifies whether PostgreSQL is configured and reachable from the runtime. | — | — | — |
+| `settings` | Reads the primary profile. | Upserts settings. | — | — |
+| `notes` | Lists notes, optionally by `symbol`. | Creates a note. | Updates by `id`. | Deletes by `id`. |
+| `alerts` | Lists alert definitions. | Creates a definition. | Updates by `id`. | Deletes by `id`. |
+| `watchlists` | Lists ordered lists/tickers. | Creates a list. | — | Deletes by `id`. |
+| `workspaces` | Lists saved layouts. | Upserts by name. | — | Deletes by `id`. |
+| `scanners` | Lists saved definitions. | Creates a definition. | — | Deletes by `id`. |
+
+`GET /api/personal?resource=status` works without a database. Every other operation returns `503 DATABASE_UNCONFIGURED` until a server-side `DATABASE_URL` is available. In production, all personal operations first require the authenticated owner and scope rows to that owner's derived identifier.
+
+Current UI behavior is deliberately narrower than the API:
+
+- Notes support create, edit, delete, ticker filtering, and Markdown text stored privately in PostgreSQL.
+- Alerts support create/list/delete for price, percent-change, relative-volume, news, event, and technical definitions. Saving a definition does not evaluate it, notify anyone, or execute a trade; a scheduler/worker must do that separately.
+- Settings persist market timezone, default chart range, and refresh preference. The editor saves these values; not every already-mounted research module consumes them globally yet.
+- Workspace layouts can be saved and restored from the toolbar when PostgreSQL is configured.
+- Watchlist interactions and scanner custom presets remain session-local in the current panels. Durable watchlist/scanner APIs and schema are ready for later UI wiring.
 
 ## PostgreSQL and Prisma
 
-1. Start PostgreSQL and create a local database.
-2. Set `DATABASE_URL` in `.env.local`.
-3. Generate the client and apply the migration:
+Research routes work without a database. To enable durable personal data:
+
+1. Provision PostgreSQL and set a server-side, preferably pooled, `DATABASE_URL`.
+2. Generate the Prisma client and apply the committed migration.
+3. Redeploy and confirm `/api/personal?resource=status` reports `configured: true`.
 
 ```bash
 pnpm prisma:generate
 pnpm prisma:migrate
 ```
 
-The initial migration is committed under `prisma/migrations`. Prisma is initialized lazily by `lib/prisma.ts`; importing the application does not connect to a database, and the application never runs migrations at startup.
+Prisma is loaded lazily, and the application never runs migrations at startup. The schema includes settings, ordered watchlists, saved scanners, alerts, saved workspaces, cached security metadata, and notes.
 
-The current Sites/Vinext preview runs in a Cloudflare Worker-compatible runtime. Phase 1 does not access PostgreSQL from that Worker. Before persistence routes are enabled, deploy those routes in a standard Next.js Node runtime or configure a verified edge-compatible Prisma PostgreSQL adapter/proxy and pooled database URL. D1/Drizzle is intentionally not substituted for the requested PostgreSQL/Prisma stack.
+### Current Sites/Prisma runtime caveat
 
-## Command language
+The Sites/Vinext deployment targets a Cloudflare Worker-compatible runtime. The default Prisma PostgreSQL client uses a TCP-oriented Node runtime and must not be assumed to work there. For production persistence, either:
 
-| Input | Parsed intent | Availability |
-| --- | --- | --- |
-| `NVDA` | Security overview | Phase 2 |
-| `TSLA CHART` | Chart | Phase 2 |
-| `NVDA NEWS` | Ticker news | Phase 3 |
-| `AMD OPT` | Options terminal | Phase 5 |
-| `META FIN` | Financials | Phase 2 |
-| `PLTR EVENTS` | Corporate events | Phase 4 |
-| `MARKET` | Market monitor | Phase 1 mock fixture |
-| `MOVERS` | Market movers | Phase 2 |
-| `SCAN` | Scanner | Phase 6 |
-| `WATCH` | Watchlists | Phase 2 |
-| `EARNINGS` | Earnings center | Phase 4 |
-| `COMPARE NVDA AMD AVGO` | Company comparison | Phase 7 |
+- run `/api/personal` in a standard Next.js Node runtime, or
+- configure and verify an edge-compatible Prisma PostgreSQL adapter/proxy with a pooled connection URL.
 
-Parser inputs are case-insensitive, whitespace-normalized, bounded in length, and fully validated. Extend the declarative registry in `lib/commands/parser.ts`; UI routing remains separate.
+The current Sites project does not provision D1, and D1/Drizzle is not silently substituted for the PostgreSQL/Prisma design. Until one of the supported PostgreSQL runtime paths is deployed, the hosted research UI can operate but personal modules will correctly report persistence as unconfigured.
+
+## Entitlements, timing, and analytical limits
+
+| Capability | Production rule |
+| --- | --- |
+| Market benchmarks | Dashboard benchmarks are explicitly labeled ETF proxies: `SPY`, `QQQ`, `DIA`, and `IWM`. Direct index values require a separate Indices entitlement. |
+| VIX | Do not synthesize VIX from an ETF or another proxy. It remains unavailable unless the Massive Indices product is entitled. |
+| Options | Read quality/freshness from each normalized response. Options Developer data is commonly delayed (typically 15 minutes); the UI must honor the response metadata rather than imply real time. |
+| Financials | Statements and ratios require the relevant financial-data entitlement. Missing sections remain unavailable; forward P/E is not fabricated from unrelated fields. |
+| TMX events | Source records provide dates but no structured time. The source refreshes on roughly a two-hour cadence, so the UI shows date-only timing and delayed quality. |
+| Benzinga news | The current client polls about every 30 seconds. Provider entitlement and response timestamps determine actual freshness. |
+| Scanner, heatmap and breadth | Results cover the configured curated universe, not full-exchange membership. Heatmap sizing currently uses reported volume, not market capitalization; breadth is a current snapshot rather than a historical breadth series. |
+| Pattern detection | Patterns are heuristic observations with confidence/reasoning and invalidation levels, not deterministic predictions. |
+| News-price and catalysts | Co-occurrence is labeled association only. The terminal does not attribute causation to a headline or event. |
+| Options activity | Put/call ratios and unusual candidates use the current returned chain. Historical IV rank, IV percentile, and volume-versus-baseline remain unavailable without separate history. |
+
+Unavailable fields should stay unavailable. Never replace missing entitlements, times, estimates, ratios, or history with plausible-looking values.
+
+## Commands, panels, and keyboard
+
+The command language is case-insensitive, whitespace-normalized, bounded, and separate from panel routing.
+
+| Input | Result |
+| --- | --- |
+| `NVDA` | Security overview |
+| `TSLA CHART` | Interactive chart |
+| `NVDA NEWS` | Ticker news |
+| `AMD OPT` | Options terminal |
+| `META FIN` | Financials |
+| `PLTR EVENTS` | Corporate events |
+| `MARKET` | Market monitor |
+| `MOVERS` | Market movers |
+| `SCAN` | Scanner |
+| `WATCH` | Watchlist |
+| `EARNINGS` | Earnings center |
+| `COMPARE NVDA AMD AVGO` | Company comparison |
 
 Keyboard shortcuts:
 
 - `/` or `Cmd/Ctrl + K`: open the command bar
 - `Esc`: close the active command overlay
-- `M`: open the Phase 1 market fixture in the active panel
-- `N`, `S`, `W`, `E`, `O`: recognize future news, scanner, watchlist, events, and options modules
-- `?`: open the shortcut reference
+- `M`: market monitor
+- `N`: news
+- `S`: scanner
+- `W`: watchlist
+- `E`: events
+- `O`: options
+- `?`: shortcut reference
 
-Shortcuts do not fire while typing in inputs, selects, textareas, or editable content.
+Single-key shortcuts pause while focus is in an input, select, textarea, or editable element. The command palette supports arrow-key selection and Enter execution.
 
-## Checks
+## Verification
+
+Run the full local handoff suite from the repository root:
 
 ```bash
 pnpm typecheck
@@ -147,35 +264,28 @@ pnpm test:render
 pnpm prisma:validate
 ```
 
-The production build and render test do not require an API key, live database, or network call.
+The unit suite covers command parsing, workspace-tree invariants, stock calculations, SIC/market-cap classification, research adapters, technical indicators, options analytics, scanner rules, and advanced analytics. `test:render` is the production-render smoke test. Use mock mode for repeatable, network-free application verification; a live provider key and database are only needed for live entitlement checks and personal persistence integration.
 
 ## Project map
 
 ```text
-app/                         Next.js routes, metadata, and global styles
-components/terminal/         Shell, command palette, navigation, panels
-lib/commands/                Parser and fuzzy ranking
-lib/workspace/               Serializable layout tree and reducer
-lib/massive/                 Server-only request client, schemas, adapters
-lib/mock/                    Deterministic provider implementation
-lib/cache/                   Cache contract, TTL policy, memory adapter
-lib/errors/                  Typed and sanitized application errors
-lib/env.ts                   Server environment validation
-lib/market-data.ts           Mock/live provider selection
-lib/prisma.ts                Lazy PostgreSQL client
-types/                       Provider-neutral domain contracts
-prisma/                      Schema and initial migration
-tests/                       Parser, workspace, and render checks
+app/api/research/             Read-only normalized research facade
+app/api/personal/             PostgreSQL-backed personal-data API
+components/terminal/          Shell, panels, commands and research modules
+hooks/useResearchData.ts      Client fetch/poll/session response cache
+lib/commands/                 Command parser and fuzzy ranking
+lib/workspace/                Serializable layout tree and reducer
+lib/massive/                  Server-only client, schemas, adapters and services
+lib/mock/                     Deterministic research provider
+lib/cache/                    Cache contract, TTL policy and memory adapter
+lib/indicators/               Technical indicator calculations
+lib/options/                  Chain, activity, Greeks and strategy analytics
+lib/scanner/                  Scanner definitions and evaluation
+lib/analytics/                Breadth, patterns, event-study and comparison logic
+lib/env.ts                    Strict server environment validation
+lib/prisma.ts                 Lazy PostgreSQL client
+prisma/                       Schema and committed migration
+tests/                        Unit and render verification
 ```
 
-## Roadmap
-
-- Phase 2: stock search, overview, quote header, charting, watchlists, movers
-- Phase 3: Benzinga news terminal and ticker news
-- Phase 4: TMX events, catalysts, and earnings center
-- Phase 5: options chain, contracts, Greeks, and research strategy builder
-- Phase 6: scanner engine, RVOL, catalysts, and saved presets
-- Phase 7: breadth, heatmap, patterns, timelines, and comparisons
-- Phase 8: persistence UI, saved workspaces, settings, performance, and polish
-
-Each phase should keep the provider boundary, explicit freshness labels, research-safety language, and no-trade-execution constraint established here.
+Brand strings are centralized in `lib/brand.ts`. Regenerate `public/og.png` when the brand changes.

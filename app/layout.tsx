@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { BRAND } from "@/lib/brand";
 import "./globals.css";
+import "@/components/charts/charts.css";
+import "@/components/stocks/stocks.css";
+import "@/components/research/research.css";
 
 const title = `${BRAND.productName} — ${BRAND.descriptor}`;
 const description = "A private, keyboard-first research terminal for U.S. equities, options, news, and corporate catalysts.";

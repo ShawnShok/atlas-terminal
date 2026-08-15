@@ -7,8 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// The application owns one well-known settings row today. Keeping an ID makes
-// a future migration to multiple local profiles possible without redesigning it.
+// Production owner IDs are derived from the authenticated account. The
+// `primary` default remains only for local development and migration fixtures.
 model UserSettings {
   id                  String           @id @default("primary")
   timezone            String           @default("America/New_York")

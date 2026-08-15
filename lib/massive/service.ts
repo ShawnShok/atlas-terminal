@@ -33,12 +33,17 @@ const tickerSchema = z
     /^[A-Z][A-Z0-9.-]{0,9}$/,
     "Ticker must contain 1-10 letters, numbers, dots, or hyphens.",
   );
+const optionTickerSchema = z.string().trim().toUpperCase().regex(
+  /^O:[A-Z0-9.-]{1,15}[0-9]{6}[CP][0-9]{8}$/,
+  "Option ticker format is invalid.",
+);
+const aggregateSymbolSchema = z.union([tickerSchema, optionTickerSchema]);
 
 const dateSchema = z.iso.date();
 
 const aggregatesInputSchema = z
   .object({
-    symbol: tickerSchema,
+    symbol: aggregateSymbolSchema,
     multiplier: z.number().int().positive().max(50_000),
     timespan: z.enum([
       "minute",
