@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// The application owns one well-known settings row today. Keeping an ID makes
+// a future migration to multiple local profiles possible without redesigning it.
+model UserSettings {
+  id                  String           @id @default("primary")
+  timezone            String           @default("America/New_York")
+  defaultWatchlistId  String?
+  defaultWorkspaceId  String?
+  chartDefaults       Json?
+  preferredIndicators Json?
+  scannerDefaults     Json?
+  newsFilters         Json?
+  eventFilters        Json?
+  refreshPreferences  Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  defaultWatchlist    Watchlist?       @relation("DefaultWatchlist", fields: [defaultWatchlistId], references: [id], onDelete: SetNull)
+  defaultWorkspace    SavedWorkspace?  @relation("DefaultWorkspace", fields: [defaultWorkspaceId], references: [id], onDelete: SetNull)
+  watchlists          Watchlist[]      @relation("OwnerWatchlists")
+  savedScanners       SavedScanner[]
+  alerts              Alert[]
+  savedWorkspaces     SavedWorkspace[] @relation("OwnerWorkspaces")
+  notes               Notes[]
+
+  @@index([defaultWatchlistId])
+  @@index([defaultWorkspaceId])
+}
+
+model Watchlist {
+  id                String            @id @default(cuid())
+  ownerId           String            @default("primary")
+  name              String
+  description       String?
+  position          Int               @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  tickers           WatchlistTicker[]
+  owner             UserSettings      @relation("OwnerWatchlists", fields: [ownerId], references: [id], onDelete: Cascade)
+  settingsAsDefault UserSettings[]    @relation("DefaultWatchlist")
+
+  @@unique([ownerId, name])
+  @@index([ownerId, position])
+}
+
+model WatchlistTicker {
+  id          String    @id @default(cuid())
+  watchlistId String
+  symbol      String    @db.VarChar(15)
+  position    Int       @default(0)
+  addedAt     DateTime  @default(now())
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, symbol])
+  @@index([symbol])
+  @@index([watchlistId, position])
+}
+
+model SavedScanner {
+  id          String       @id @default(cuid())
+  ownerId     String       @default("primary")
+  name        String
+  description String?
+  definition  Json
+  isPreset    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  owner       UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, name])
+  @@index([ownerId, updatedAt])
+}
+
+enum AlertType {
+  PRICE
+  PERCENT_CHANGE
+  RELATIVE_VOLUME
+  NEWS
+  EVENT
+  TECHNICAL
+}
+
+model Alert {
+  id              String       @id @default(cuid())
+  ownerId         String       @default("primary")
+  name            String?
+  type            AlertType
+  symbol          String?      @db.VarChar(15)
+  configuration   Json
+  enabled         Boolean      @default(true)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  owner           UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, enabled])
+  @@index([enabled, type])
+  @@index([symbol])
+}
+
+model SavedWorkspace {
+  id                String         @id @default(cuid())
+  ownerId           String         @default("primary")
+  name              String
+  layout            Json
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  owner             UserSettings   @relation("OwnerWorkspaces", fields: [ownerId], references: [id], onDelete: Cascade)
+  settingsAsDefault UserSettings[] @relation("DefaultWorkspace")
+
+  @@unique([ownerId, name])
+  @@index([ownerId, updatedAt])
+}
+
+model CachedSecurityMetadata {
+  symbol    String   @id @db.VarChar(15)
+  payload   Json
+  source    String
+  asOf      DateTime
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([source, asOf])
+}
+
+model Notes {
+  id        String       @id @default(cuid())
+  ownerId   String       @default("primary")
+  symbol    String       @db.VarChar(15)
+  title     String?
+  body      String       @db.Text
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  owner     UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, updatedAt])
+  @@index([ownerId, symbol])
+  @@index([symbol, updatedAt])
+}
