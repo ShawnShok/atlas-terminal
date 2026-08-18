@@ -36,13 +36,15 @@ function toIsoTimestamp(value: number | undefined, fallback: string): string {
     return fallback;
   }
 
-  // Massive timestamps may be Unix milliseconds, microseconds, or nanoseconds.
+  // Massive timestamps may be Unix seconds, milliseconds, microseconds, or nanoseconds.
   const milliseconds =
     value > 10_000_000_000_000_000
       ? value / 1_000_000
       : value > 10_000_000_000_000
         ? value / 1_000
-        : value;
+        : value > 10_000_000_000
+          ? value
+          : value * 1_000;
   const date = new Date(milliseconds);
   return Number.isNaN(date.valueOf()) ? fallback : date.toISOString();
 }
@@ -259,8 +261,6 @@ export function adaptNews(
   response: MassiveNewsResponse,
   options: AdapterOptions = {},
 ): readonly NewsArticle[] {
-  const fetchedAt = options.asOf ?? new Date().toISOString();
-
   return (response.results ?? []).flatMap((raw) => {
     if (!raw.id || !raw.title || !raw.published_utc) {
       return [];
@@ -290,7 +290,7 @@ export function adaptNews(
           logoUrl: raw.publisher?.logo_url ?? null,
           faviconUrl: raw.publisher?.favicon_url ?? null,
         },
-        asOf: fetchedAt,
+        asOf: options.asOf ?? raw.published_utc,
         quality: options.quality ?? "unknown",
         source: "massive" as const,
       },

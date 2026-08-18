@@ -26,6 +26,10 @@ const SCOPE_CATEGORY: Readonly<Partial<Record<NewsFiltersValue["scope"], NewsCat
   macro: "macro",
 };
 
+interface LiveNewsBundle extends NewsResearchBundle {
+  readonly providerNote?: string | null;
+}
+
 function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTickerSelect: (ticker: string) => void }) {
   const [filters, setFilters] = useState<NewsFiltersValue>({
     scope: "ticker",
@@ -51,7 +55,7 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
     after: filters.date ? `${filters.date}T00:00:00.000Z` : undefined,
     q: filters.keyword || undefined,
   }), [filters.category, filters.date, filters.keyword, filters.scope, filters.ticker, scopedCategory, ticker]);
-  const result = useResearchData<NewsResearchBundle>("news", params, { refreshMs: 30_000, retainMs: 20_000 });
+  const result = useResearchData<LiveNewsBundle>("news", params, { refreshMs: 30_000, retainMs: 20_000 });
   const baseArticles = useMemo(() => (result.data?.articles ?? []).filter((article) => {
     if (filters.scope === "watchlist" && !article.tickers.some((symbol) => CORE_WATCHLIST.has(symbol))) return false;
     if (filters.date && article.publishedAt.slice(0, 10) !== filters.date) return false;
@@ -92,7 +96,7 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
 
   if (!result.data) return <DataState loading={result.loading} error={result.error} onRetry={result.reload} />;
   const baseStatus = researchStatus(result.meta, result.error);
-  const enrichmentMessages: string[] = [];
+  const enrichmentMessages: string[] = result.data.providerNote ? [result.data.providerNote] : [];
   if (allArticleSymbols.length > classificationSymbols.length) {
     enrichmentMessages.push(`Sector enrichment is limited to ${classificationSymbols.length} of ${allArticleSymbols.length} article symbols.`);
   }
@@ -118,6 +122,11 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
   return (
     <NewsTerminal
       status={status}
+      providerLabel={result.meta?.mode === "mock"
+        ? "MOCK NEWS FIXTURE"
+        : result.meta?.source.includes("benzinga")
+          ? "BENZINGA DATASET"
+          : "MASSIVE STOCK NEWS"}
       filters={filters}
       sectors={availableSectors}
       articles={articles}

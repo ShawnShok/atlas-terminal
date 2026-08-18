@@ -71,6 +71,10 @@ interface DashboardBundle {
   readonly movers: MarketMoversData;
   readonly news: readonly NewsArticle[];
   readonly events: readonly CorporateEvent[];
+  readonly availability?: {
+    readonly news: { readonly available: boolean; readonly note: string | null };
+    readonly events: { readonly available: boolean; readonly note: string | null };
+  };
   readonly indexNote: string;
 }
 
@@ -281,6 +285,15 @@ export function LiveDashboardPanel({ recentTickers, onTickerSelect }: { recentTi
   const watchlist = useResearchData<WatchlistResearchBundle>("watchlist", { symbols: symbols.join(",") }, { refreshMs: 20_000 });
   const search = useTickerSearch(onTickerSelect);
   const status = statusFrom(dashboard.data, dashboard.meta, dashboard.loading, dashboard.error, dashboard.data?.indexNote);
+  const newsProvider = dashboard.meta?.mode === "mock"
+    ? "MOCK NEWS"
+    : dashboard.meta?.source.includes("benzinga")
+      ? "BENZINGA"
+      : dashboard.meta?.source.includes("massive stock news")
+        ? "MASSIVE"
+        : "MARKET NEWS";
+  const headlines = dashboard.data?.news ?? [];
+  const events = dashboard.data?.events ?? [];
   return (
     <div className="live-dashboard-stack">
       <HomeDashboard
@@ -309,12 +322,16 @@ export function LiveDashboardPanel({ recentTickers, onTickerSelect }: { recentTi
       />
       <div className="dashboard-intel-strip">
         <section>
-          <header><span>BENZINGA</span><strong>LATEST HEADLINES</strong></header>
-          {(dashboard.data?.news ?? []).slice(0, 5).map((article) => <article key={article.id}><time>{new Date(article.publishedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })}</time><button type="button" onClick={() => article.tickers[0] && onTickerSelect(article.tickers[0])}>{article.title}</button></article>)}
+          <header><span>{newsProvider}</span><strong>LATEST HEADLINES</strong></header>
+          {headlines.length > 0
+            ? headlines.slice(0, 5).map((article) => <article key={article.id}><time>{new Date(article.publishedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })}</time><button type="button" onClick={() => article.tickers[0] && onTickerSelect(article.tickers[0])}>{article.title}</button></article>)
+            : <p className="dashboard-intel-empty">{dashboard.data?.availability?.news.note ?? (dashboard.loading ? "LOADING HEADLINES…" : "NO HEADLINES RETURNED")}</p>}
         </section>
         <section>
           <header><span>TMX</span><strong>UPCOMING EVENTS</strong></header>
-          {(dashboard.data?.events ?? []).slice(0, 5).map((event) => <article key={event.id}><time>{event.startsAt.slice(0, 10)}</time><button type="button" onClick={() => onTickerSelect(event.symbol)}><b>{event.symbol}</b> {event.title}</button></article>)}
+          {events.length > 0
+            ? events.slice(0, 5).map((event) => <article key={event.id}><time>{event.startsAt.slice(0, 10)}</time><button type="button" onClick={() => onTickerSelect(event.symbol)}><b>{event.symbol}</b> {event.title}</button></article>)
+            : <p className="dashboard-intel-empty">{dashboard.data?.availability?.events.note ?? (dashboard.loading ? "LOADING EVENTS…" : "NO UPCOMING EVENTS RETURNED")}</p>}
         </section>
       </div>
     </div>

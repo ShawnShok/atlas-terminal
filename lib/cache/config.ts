@@ -5,6 +5,8 @@ import type { CacheTtlConfig } from "./types";
 export const DEFAULT_CACHE_TTLS = {
   quote: 5_000,
   snapshot: 5_000,
+  intraday: 15_000,
+  option: 30_000,
   news: 30_000,
   event: 900_000,
   reference: 86_400_000,
@@ -18,6 +20,8 @@ export function cacheTtlsFromEnv(environment: ServerEnv): CacheTtlConfig {
   return {
     quote: environment.CACHE_TTL_QUOTE_MS,
     snapshot: environment.CACHE_TTL_QUOTE_MS,
+    intraday: environment.CACHE_TTL_INTRADAY_MS,
+    option: environment.CACHE_TTL_OPTIONS_MS,
     news: environment.CACHE_TTL_NEWS_MS,
     event: environment.CACHE_TTL_EVENTS_MS,
     reference: environment.CACHE_TTL_REFERENCE_MS,

@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getServerEnv } from "@/lib/env";
-import { normalizeError } from "@/lib/errors";
+import { isAppError, normalizeError } from "@/lib/errors";
+import { describeFreshness } from "@/lib/freshness";
 import {
   DEFAULT_RESEARCH_UNIVERSE,
   getMassiveMarketDataService,
   getMassiveResearchService,
 } from "@/lib/massive";
 import { getMockResearchService } from "@/lib/mock";
-import { researchSectorFromSic } from "@/lib/research";
+import {
+  dedupeCorporateEvents,
+  dedupeNewsArticles,
+  researchSectorFromSic,
+} from "@/lib/research";
+import type {
+  BenzingaNewsService,
+  StockMarketService,
+} from "@/lib/services";
 import type {
   AggregateBar,
   CatalystTimelineEntry,
@@ -16,6 +25,9 @@ import type {
   CorporateEventType,
   DataQuality,
   EventsResearchBundle,
+  MarketSession,
+  NewsArticle,
+  NewsResearchBundle,
   SecurityClassification,
   SecurityResearchBundle,
   TerminalApiSuccess,
@@ -55,6 +67,74 @@ const TMX_EVENT_TYPES: Readonly<Record<CorporateEventType, readonly string[]>> =
   summit: ["summit"],
   other: [],
 };
+
+interface LiveNewsQuery {
+  readonly ticker?: string;
+  readonly publishedAfter?: string;
+  readonly category?: string;
+  readonly keyword?: string;
+  readonly limit?: number;
+}
+
+interface LiveNewsResult {
+  readonly bundle: NewsResearchBundle;
+  readonly source: "benzinga" | "massive stock news";
+  readonly note: string | null;
+}
+
+function filterNewsArticles(
+  articles: readonly NewsArticle[],
+  input: LiveNewsQuery,
+): readonly NewsArticle[] {
+  const keyword = input.keyword?.trim().toLowerCase();
+  return dedupeNewsArticles(articles).filter((article) => {
+    if (input.category && !article.categories.includes(input.category as typeof article.categories[number])) {
+      return false;
+    }
+    if (!keyword) return true;
+    return [article.title, article.summary ?? "", article.body ?? "", ...article.keywords]
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword);
+  });
+}
+
+async function getLiveNewsWithFallback(
+  research: BenzingaNewsService,
+  market: StockMarketService,
+  input: LiveNewsQuery = {},
+): Promise<LiveNewsResult> {
+  try {
+    const bundle = await research.getBenzingaNews(input);
+    return {
+      bundle: { ...bundle, articles: dedupeNewsArticles(bundle.articles) },
+      source: "benzinga",
+      note: null,
+    };
+  } catch (benzingaError) {
+    try {
+      const articles = await market.getNews({
+        symbol: input.ticker,
+        publishedAfter: input.publishedAfter,
+        limit: Math.min(1_000, Math.max(1, Math.trunc(input.limit ?? 120))),
+        order: "desc",
+      });
+      const entitlementMissing = isAppError(benzingaError) && benzingaError.code === "ENTITLEMENT_REQUIRED";
+      return {
+        bundle: {
+          articles: filterNewsArticles(articles, input),
+          filterTicker: input.ticker ?? null,
+        },
+        source: "massive stock news",
+        note: entitlementMissing
+          ? "Benzinga add-on unavailable; using Massive stock news included with the Stocks plan."
+          : "Benzinga is temporarily unavailable; using Massive stock news.",
+      };
+    } catch {
+      throw benzingaError;
+    }
+  }
+}
 
 function hasOwnKey<ObjectType extends object>(
   value: ObjectType,
@@ -117,10 +197,9 @@ function mergeEventBundles(bundles: readonly EventsResearchBundle[]): EventsRese
   if (!first) {
     throw new Error("Event response is invalid.");
   }
-  const uniqueEvents = new Map(bundles.flatMap((bundle) => bundle.events).map((event) => [event.id, event]));
   return {
     ...first,
-    events: [...uniqueEvents.values()].sort((left, right) => left.startsAt.localeCompare(right.startsAt)),
+    events: dedupeCorporateEvents(bundles.flatMap((bundle) => bundle.events)),
   };
 }
 
@@ -214,16 +293,34 @@ function unauthorizedResponse(requestId: string) {
 
 function response<T>(
   data: T,
-  input: { mode: "live" | "mock"; source: string; quality?: DataQuality; asOf?: string },
+  input: {
+    mode: "live" | "mock";
+    source: string;
+    quality?: DataQuality;
+    asOf?: string;
+    marketSession?: MarketSession | null;
+    staleAfterMs?: number | null;
+    delayMinutes?: number | null;
+  },
 ): NextResponse<TerminalApiSuccess<T>> {
+  const quality = input.quality ?? (input.mode === "mock" ? "indicative" : "unknown");
+  const asOf = input.asOf ?? new Date().toISOString();
   return NextResponse.json({
     ok: true,
     data,
     meta: {
       mode: input.mode,
       source: input.source,
-      quality: input.quality ?? (input.mode === "mock" ? "indicative" : "unknown"),
-      asOf: input.asOf ?? new Date().toISOString(),
+      quality,
+      asOf,
+      freshness: describeFreshness({
+        quality,
+        asOf,
+        source: input.source,
+        marketSession: input.marketSession,
+        staleAfterMs: input.staleAfterMs,
+        delayMinutes: input.delayMinutes,
+      }),
     },
   }, {
     headers: {
@@ -292,16 +389,35 @@ export async function GET(request: NextRequest) {
           ]);
           data = { snapshot, details, bars };
         }
-        return response(data, { mode, source: mode === "mock" ? "mock" : "massive", quality: data.snapshot.quality, asOf: data.snapshot.asOf });
+        return response(data, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: data.snapshot.quality,
+          asOf: data.snapshot.asOf,
+          marketSession: data.snapshot.quote.session,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+        });
       }
       case "movers": {
         const data = mode === "mock" ? await mock.getMovers() : await live!.getMovers();
-        return response(data, { mode, source: mode === "mock" ? "mock" : "massive", quality: data.quality, asOf: data.asOf });
+        return response(data, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: data.quality,
+          asOf: data.asOf,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+        });
       }
       case "watchlist": {
         const requested = symbols(request.nextUrl.searchParams.get("symbols"), ["NVDA", "AAPL", "MSFT", "AMD", "AVGO", "META", "PLTR", "TSLA"]);
         const snapshots = mode === "mock" ? await mock.getSnapshots(requested) : await live!.getSnapshots(requested);
-        return response({ name: "CORE", symbols: requested, snapshots }, { mode, source: mode === "mock" ? "mock" : "massive", asOf: snapshots[0]?.asOf });
+        return response({ name: "CORE", symbols: requested, snapshots }, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: snapshots[0]?.quality,
+          asOf: snapshots[0]?.asOf,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+        });
       }
       case "classifications": {
         const requested = symbols(request.nextUrl.searchParams.get("symbols"), [symbol]);
@@ -336,7 +452,13 @@ export async function GET(request: NextRequest) {
       case "scanner": {
         const requested = symbols(request.nextUrl.searchParams.get("symbols"), DEFAULT_RESEARCH_UNIVERSE);
         const snapshots = mode === "mock" ? await mock.getSnapshots(requested) : await live!.getSnapshots(requested);
-        return response({ universe: requested, snapshots, scope: "CURATED U.S. RESEARCH UNIVERSE" }, { mode, source: mode === "mock" ? "mock" : "massive", asOf: snapshots[0]?.asOf });
+        return response({ universe: requested, snapshots, scope: "CURATED U.S. RESEARCH UNIVERSE" }, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: snapshots[0]?.quality,
+          asOf: snapshots[0]?.asOf,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+        });
       }
       case "news": {
         const tickerFilter = request.nextUrl.searchParams.get("all") === "true" ? undefined : symbol;
@@ -346,8 +468,18 @@ export async function GET(request: NextRequest) {
           category: newsCategory(request.nextUrl.searchParams.get("category")),
           keyword: request.nextUrl.searchParams.get("q") ?? undefined,
         };
-        const data = mode === "mock" ? await mock.getBenzingaNews(query) : await live!.getBenzingaNews(query);
-        return response(data, { mode, source: mode === "mock" ? "mock" : "benzinga", quality: mode === "mock" ? "indicative" : "live", asOf: data.articles[0]?.asOf });
+        if (mode === "mock") {
+          const bundle = await mock.getBenzingaNews(query);
+          const data = { ...bundle, articles: dedupeNewsArticles(bundle.articles) };
+          return response(data, { mode, source: "mock", quality: "indicative", asOf: data.articles[0]?.asOf });
+        }
+        const news = await getLiveNewsWithFallback(live!, market!, query);
+        return response({ ...news.bundle, providerNote: news.note }, {
+          mode,
+          source: news.source,
+          quality: news.source === "benzinga" ? "live" : "unknown",
+          asOf: news.bundle.articles[0]?.asOf,
+        });
       }
       case "events":
       case "earnings": {
@@ -379,6 +511,7 @@ export async function GET(request: NextRequest) {
             events: data.events.filter((event) => event.type === eventFilter.normalized),
           };
         }
+        data = { ...data, events: dedupeCorporateEvents(data.events) };
         return response(data, { mode, source: mode === "mock" ? "mock" : "tmx", quality: mode === "mock" ? "indicative" : "delayed", asOf: data.events[0]?.asOf });
       }
       case "options": {
@@ -386,7 +519,13 @@ export async function GET(request: NextRequest) {
         const data = mode === "mock"
           ? await mock.getOptionChain({ symbol, expiration })
           : await live!.getOptionChain({ symbol, expiration });
-        return response(data, { mode, source: mode === "mock" ? "mock" : "massive", quality: data.quality, asOf: data.asOf });
+        return response(data, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: data.quality,
+          asOf: data.asOf,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_OPTIONS_MS * 3 : null,
+        });
       }
       case "option-chart": {
         const contract = optionContract(request.nextUrl.searchParams.get("contract"));
@@ -431,12 +570,16 @@ export async function GET(request: NextRequest) {
         const to = isoDate(addDays(now, 90));
         const results = await Promise.allSettled(mode === "mock"
           ? [
-              mock.getBenzingaNews({ ticker: symbol }),
+              mock.getBenzingaNews({ ticker: symbol }).then((bundle) => ({
+                bundle,
+                source: "mock" as const,
+                note: null,
+              })),
               mock.getCorporateEvents({ ticker: symbol, from, to }),
               mock.getSecurity(symbol, 100),
             ] as const
           : [
-              live!.getBenzingaNews({ ticker: symbol, publishedAfter: `${from}T00:00:00Z`, limit: 200 }),
+              getLiveNewsWithFallback(live!, market!, { ticker: symbol, publishedAfter: `${from}T00:00:00Z`, limit: 200 }),
               live!.getCorporateEvents({ ticker: symbol, from, to, limit: 300 }),
               Promise.all([
                 market!.getSnapshot(symbol),
@@ -446,11 +589,11 @@ export async function GET(request: NextRequest) {
             ] as const);
         const [newsResult, eventsResult, securityResult] = results;
         const notes = [
-          newsResult.status === "rejected" ? "Benzinga news is unavailable for this timeline." : null,
+          newsResult.status === "rejected" ? "Market news is unavailable for this timeline." : newsResult.value.note,
           eventsResult.status === "rejected" ? "TMX events are unavailable for this timeline." : null,
           securityResult.status === "rejected" ? "Price-move history is unavailable for this timeline." : null,
         ].filter((note): note is string => note !== null);
-        const newsArticles = newsResult.status === "fulfilled" ? newsResult.value.articles : [];
+        const newsArticles = newsResult.status === "fulfilled" ? newsResult.value.bundle.articles : [];
         const corporateEvents = eventsResult.status === "fulfilled" ? eventsResult.value.events : [];
         const priceBars = securityResult.status === "fulfilled" ? securityResult.value.bars : [];
         const entries: CatalystTimelineEntry[] = [
@@ -462,7 +605,7 @@ export async function GET(request: NextRequest) {
           ? "mock"
           : [
               securityResult.status === "fulfilled" ? "massive" : null,
-              newsResult.status === "fulfilled" ? "benzinga" : null,
+              newsResult.status === "fulfilled" ? newsResult.value.source : null,
               eventsResult.status === "fulfilled" ? "tmx" : null,
             ].filter((source): source is string => source !== null).join(" + ") || "timeline sources unavailable";
         return response({
@@ -499,21 +642,21 @@ export async function GET(request: NextRequest) {
               events: { available: true, note: null },
             },
             indexNote,
-          }, { mode, source: "mock", asOf: snapshots[0]?.asOf });
+          }, { mode, source: "mock", quality: snapshots[0]?.quality, asOf: snapshots[0]?.asOf });
         }
 
         const [snapshots, optionalResults] = await Promise.all([
           live!.getSnapshots(requested),
           Promise.allSettled([
             live!.getMovers(),
-            live!.getBenzingaNews({ limit: 40 }),
+            getLiveNewsWithFallback(live!, market!, { limit: 40 }),
             live!.getCorporateEvents({ from: eventFrom, to: eventTo, limit: 80 }),
           ]),
         ]);
         const [moversResult, newsResult, eventsResult] = optionalResults;
         const availabilityNotes = [
           moversResult.status === "rejected" ? "Market movers are currently unavailable." : null,
-          newsResult.status === "rejected" ? "Benzinga headlines are currently unavailable." : null,
+          newsResult.status === "rejected" ? "Market headlines are currently unavailable." : newsResult.value.note,
           eventsResult.status === "rejected" ? "TMX events are currently unavailable." : null,
         ].filter((note): note is string => note !== null);
         const asOf = snapshots[0]?.asOf ?? new Date().toISOString();
@@ -523,15 +666,25 @@ export async function GET(request: NextRequest) {
         return response({
           snapshots,
           movers,
-          news: newsResult.status === "fulfilled" ? newsResult.value.articles : [],
+          news: newsResult.status === "fulfilled" ? newsResult.value.bundle.articles : [],
           events: eventsResult.status === "fulfilled" ? eventsResult.value.events : [],
           availability: {
             movers: { available: moversResult.status === "fulfilled", note: availabilityNotes.find((note) => note.startsWith("Market movers")) ?? null },
-            news: { available: newsResult.status === "fulfilled", note: availabilityNotes.find((note) => note.startsWith("Benzinga")) ?? null },
+            news: { available: newsResult.status === "fulfilled", note: newsResult.status === "fulfilled" ? newsResult.value.note : availabilityNotes.find((note) => note.startsWith("Market headlines")) ?? null },
             events: { available: eventsResult.status === "fulfilled", note: availabilityNotes.find((note) => note.startsWith("TMX")) ?? null },
           },
           indexNote: [indexNote, ...availabilityNotes].join(" "),
-        }, { mode, source: "massive + optional benzinga + tmx", asOf });
+        }, {
+          mode,
+          source: [
+            "massive",
+            newsResult.status === "fulfilled" ? newsResult.value.source : null,
+            eventsResult.status === "fulfilled" ? "tmx" : null,
+          ].filter((source): source is string => source !== null).join(" + "),
+          quality: snapshots[0]?.quality,
+          asOf,
+          staleAfterMs: environment.CACHE_TTL_QUOTE_MS * 3,
+        });
       }
       default:
         return NextResponse.json({ ok: false, error: { code: "NOT_FOUND", message: "Unknown research module.", retryable: false, requestId } }, { status: 404 });

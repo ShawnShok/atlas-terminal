@@ -18,10 +18,10 @@ interface TopBarDashboard {
 }
 
 const PROXIES = [
-  { symbol: "SPY", label: "S&P · SPY" },
-  { symbol: "QQQ", label: "NASDAQ · QQQ" },
-  { symbol: "DIA", label: "DOW · DIA" },
-  { symbol: "IWM", label: "RUSSELL · IWM" },
+  { symbol: "SPY", label: "SPY ETF", benchmark: "S&P 500" },
+  { symbol: "QQQ", label: "QQQ ETF", benchmark: "Nasdaq-100" },
+  { symbol: "DIA", label: "DIA ETF", benchmark: "Dow 30" },
+  { symbol: "IWM", label: "IWM ETF", benchmark: "Russell 2000" },
 ] as const;
 
 function price(value: number | null | undefined): string {
@@ -48,7 +48,7 @@ export function TopBar({ activeTicker, easternTime, marketStatus, onOpenCommand 
       <div className="market-strip" aria-label="ETF market proxies and index availability">
         {PROXIES.map((item) => {
           const row = dashboard.data?.snapshots.find((candidate) => candidate.symbol === item.symbol);
-          return <div className="market-strip-item" key={item.symbol} title={`${item.label} is an ETF proxy, not a direct index value.`}><span>{item.label}</span><strong>{price(row?.lastPrice)}</strong><em className={(row?.changePercent ?? 0) >= 0 ? "positive" : "negative"}>{row?.changePercent === null || row?.changePercent === undefined ? "—" : `${row.changePercent >= 0 ? "+" : ""}${row.changePercent.toFixed(2)}%`}</em></div>;
+          return <div className="market-strip-item" key={item.symbol} title={`${item.symbol} is an ETF tracking the ${item.benchmark}; this is its share price, not the index level.`}><span>{item.label}</span><strong>{price(row?.lastPrice)}</strong><em className={(row?.changePercent ?? 0) >= 0 ? "positive" : "negative"}>{row?.changePercent === null || row?.changePercent === undefined ? "—" : `${row.changePercent >= 0 ? "+" : ""}${row.changePercent.toFixed(2)}%`}</em></div>;
         })}
         <div className="market-strip-item is-unavailable" title="Direct VIX data requires the Massive Indices product."><span>VIX</span><strong>N/A</strong><em>INDEX PLAN</em></div>
       </div>

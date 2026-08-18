@@ -47,6 +47,8 @@ const serverEnvSchema = z
     MASSIVE_RETRY_BASE_DELAY_MS: durationFromEnvironment(250),
     USE_MOCK_DATA: booleanFromEnvironment.default(false),
     CACHE_TTL_QUOTE_MS: durationFromEnvironment(5_000),
+    CACHE_TTL_INTRADAY_MS: durationFromEnvironment(15_000),
+    CACHE_TTL_OPTIONS_MS: durationFromEnvironment(30_000),
     CACHE_TTL_NEWS_MS: durationFromEnvironment(30_000),
     CACHE_TTL_EVENTS_MS: durationFromEnvironment(900_000),
     CACHE_TTL_REFERENCE_MS: durationFromEnvironment(86_400_000),
@@ -80,6 +82,12 @@ export function parseServerEnv(
   const result = serverEnvSchema.safeParse(source);
 
   if (!result.success) {
+    if (result.error.issues.some((issue) => issue.path.join(".") === "MASSIVE_API_KEY")) {
+      throw new AppError(
+        "API_KEY_MISSING",
+        "The Massive API key is missing from the server environment.",
+      );
+    }
     throw new AppError(
       "CONFIGURATION_ERROR",
       "Server environment configuration is invalid.",

@@ -5,6 +5,11 @@ import { z } from "zod";
 import type { CacheTtlConfig } from "@/lib/cache";
 import { AppError } from "@/lib/errors";
 import type {
+  AggregateBarsInput,
+  NewsQuery,
+  StockMarketDataService,
+} from "@/lib/services";
+import type {
   AggregateBar,
   NewsArticle,
   Snapshot,
@@ -24,6 +29,13 @@ import {
   massiveSnapshotResponseSchema,
   massiveTickerDetailsResponseSchema,
 } from "./schemas";
+
+export type {
+  AggregateBarsInput,
+  MarketDataService,
+  NewsQuery,
+  StockMarketDataService,
+} from "@/lib/services";
 
 const tickerSchema = z
   .string()
@@ -72,38 +84,6 @@ const newsInputSchema = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
 });
 
-export interface AggregateBarsInput {
-  readonly symbol: string;
-  readonly multiplier: number;
-  readonly timespan:
-    | "minute"
-    | "hour"
-    | "day"
-    | "week"
-    | "month"
-    | "quarter"
-    | "year";
-  readonly from: string;
-  readonly to: string;
-  readonly adjusted?: boolean;
-  readonly sort?: "asc" | "desc";
-  readonly limit?: number;
-}
-
-export interface NewsQuery {
-  readonly symbol?: string;
-  readonly publishedAfter?: string;
-  readonly limit?: number;
-  readonly order?: "asc" | "desc";
-}
-
-export interface MarketDataService {
-  getSnapshot(symbol: string): Promise<Snapshot>;
-  getTickerDetails(symbol: string): Promise<TickerDetails>;
-  getAggregateBars(input: AggregateBarsInput): Promise<readonly AggregateBar[]>;
-  getNews(input?: NewsQuery): Promise<readonly NewsArticle[]>;
-}
-
 function validate<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
   if (!result.success) {
@@ -141,7 +121,7 @@ function intervalFor(
   }
 }
 
-export class MassiveMarketDataService implements MarketDataService {
+export class MassiveMarketDataService implements StockMarketDataService {
   readonly #client: MassiveClient;
   readonly #ttls: CacheTtlConfig;
 
@@ -176,6 +156,7 @@ export class MassiveMarketDataService implements MarketDataService {
     input: AggregateBarsInput,
   ): Promise<readonly AggregateBar[]> {
     const parsed = validate(aggregatesInputSchema, input);
+    const isIntraday = parsed.timespan === "minute" || parsed.timespan === "hour";
     const response = await this.#client.request({
       path: `/v2/aggs/ticker/${encodeURIComponent(parsed.symbol)}/range/${parsed.multiplier}/${parsed.timespan}/${parsed.from}/${parsed.to}`,
       query: {
@@ -184,14 +165,14 @@ export class MassiveMarketDataService implements MarketDataService {
         limit: parsed.limit,
       },
       schema: massiveAggregatesResponseSchema,
-      cacheTtlMs: this.#ttls.historical,
+      cacheTtlMs: isIntraday ? this.#ttls.intraday : this.#ttls.historical,
       staleIfErrorMs: this.#ttls.staleIfError,
     });
 
     return adaptAggregateBars(response, {
       symbol: parsed.symbol,
       interval: intervalFor(parsed.multiplier, parsed.timespan),
-      quality: "historical",
+      quality: isIntraday ? "unknown" : "historical",
     });
   }
 

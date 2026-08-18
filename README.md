@@ -41,6 +41,30 @@ React terminal shell
        └─ Prisma ── PostgreSQL
 ```
 
+### Stage 1 shared-data assessment
+
+This increment deliberately strengthens the shared foundation beneath the existing terminal surfaces; it does not start a broad rewrite of later feature stages.
+
+| Assessment | Result |
+| --- | --- |
+| Existing and reusable | The terminal shell, authenticated API boundaries, normalized provider adapters, deterministic mock provider, bounded async cache, PostgreSQL/Prisma layer, and current research panels remain the base. |
+| Missing before this increment | Provider-neutral service contracts, one operational freshness model, intraday/options cache policies, shared news/event deduplication, one alert cooldown gate, scanner-run/read-news/cache persistence records, and same-owner default-reference validation. |
+| Compatibility choice | Existing `Notes`, `UserSettings`, and generic typed `Alert` records are extended instead of destructively renamed into several nearly identical tables. Existing JSON scanner definitions remain while relational conditions and run history are added. |
+| Deliberately deferred | A distributed cache, an alert scheduler/notification worker, streaming news distribution, and an edge-compatible hosted PostgreSQL path remain production infrastructure work. Existing later-stage UI surfaces are not expanded in this Stage 1 change. |
+
+The resulting service structure is:
+
+```text
+lib/services/      provider-neutral capability contracts
+lib/massive/       server-only provider clients, schemas, adapters, implementations
+lib/mock/          matching deterministic implementations and normalized fixtures
+lib/cache/         async cache contract, bounded memory adapter, domain TTL policy
+lib/freshness/     provider-independent freshness state and labels
+lib/research/      news/event deduplication and shared research models
+lib/alerts/        common duplicate/cooldown delivery gate
+prisma/            tenant-scoped persistence models and additive migrations
+```
+
 Important boundaries:
 
 - Provider and database credentials remain server-only. Never expose them through `NEXT_PUBLIC_`, `VITE_`, client bundles, URLs, diagnostics, or committed files.
@@ -102,7 +126,12 @@ Do not commit a real key. If a credential is ever copied into source control, lo
 | `MASSIVE_MAX_RETRIES` | No | Bounded retry count. |
 | `MASSIVE_RETRY_BASE_DELAY_MS` | No | Base exponential-backoff delay. |
 | `MEMORY_CACHE_MAX_ENTRIES` | No | Process-local cache bound. |
-| `CACHE_TTL_*_MS` | No | Freshness and stale-fallback windows by data class. |
+| `CACHE_TTL_QUOTE_MS` | No | Very short quote/snapshot cache window. |
+| `CACHE_TTL_INTRADAY_MS` | No | Short minute/hour aggregate cache window. |
+| `CACHE_TTL_OPTIONS_MS` | No | Option-snapshot cache window aligned to returned timing metadata. |
+| `CACHE_TTL_NEWS_MS`, `CACHE_TTL_EVENTS_MS` | No | News and corporate-event cache windows. |
+| `CACHE_TTL_REFERENCE_MS`, `CACHE_TTL_FINANCIALS_MS`, `CACHE_TTL_HISTORICAL_MS` | No | Longer-lived reference, statement, and completed-history windows. |
+| `CACHE_STALE_IF_ERROR_MS` | No | Bounded fallback window only where stale data can be labeled safely. |
 | `DATABASE_URL` | Personal data | Server-side PostgreSQL connection string for `/api/personal`. |
 
 The current cache implementation is bounded process memory. Its asynchronous interface can be replaced with a distributed cache without changing research consumers.
@@ -119,7 +148,14 @@ The current cache implementation is bounded process memory. Its asynchronous int
     "mode": "live",
     "source": "massive",
     "quality": "delayed",
-    "asOf": "provider timestamp"
+    "asOf": "provider timestamp",
+    "freshness": {
+      "status": "delayed",
+      "delayMinutes": 15,
+      "lastUpdatedAt": "provider timestamp",
+      "source": "massive",
+      "marketSession": "regular"
+    }
   }
 }
 ```
@@ -135,7 +171,7 @@ Errors are sanitized and include a request ID. The route accepts at most 100 req
 | `watchlist` | `symbols` | Snapshot bundle for a caller-supplied or default symbol list. |
 | `classifications` | `symbols` | Bounded Massive reference metadata with local SIC-to-sector classification for filters. |
 | `market`, `heatmap`, `breadth`, `scanner` | optional `symbols` | Snapshots for the curated research universe. |
-| `news` | `ticker`, `all`, `after`, `category`, `q` | Benzinga news bundle. |
+| `news` | `ticker`, `all`, `after`, `category`, `q` | Benzinga news bundle, with a labeled Massive Stocks news fallback if Benzinga is unavailable. |
 | `events`, `earnings` | `ticker`, `all`, `from`, `to`, `type` | TMX event bundle; earnings fixes the event type. |
 | `options` | `ticker`, `expiration` | Normalized option chain and freshness metadata. |
 | `option-chart` | `contract`, `range`, `interval` | Validated option-contract aggregate bars. |
@@ -190,7 +226,7 @@ pnpm prisma:generate
 pnpm prisma:migrate
 ```
 
-Prisma is loaded lazily, and the application never runs migrations at startup. The schema includes settings, ordered watchlists, saved scanners, alerts, saved workspaces, cached security metadata, and notes.
+Prisma is loaded lazily, and the application never runs migrations at startup. The schema includes settings, ordered watchlists, notes, generic market/news/event/options alerts, saved scanners with relational conditions and run history, read-news state, saved workspaces, and deduplicated security/event/news cache metadata. Tenant-owned rows require an explicit authenticated owner ID; production writes cannot fall through to the local `primary` fixture owner.
 
 ### Current Sites/Prisma runtime caveat
 
@@ -261,10 +297,11 @@ pnpm lint
 pnpm test
 pnpm build
 pnpm test:render
+pnpm verify:client-bundle
 pnpm prisma:validate
 ```
 
-The unit suite covers command parsing, workspace-tree invariants, stock calculations, SIC/market-cap classification, research adapters, technical indicators, options analytics, scanner rules, and advanced analytics. `test:render` is the production-render smoke test. Use mock mode for repeatable, network-free application verification; a live provider key and database are only needed for live entitlement checks and personal persistence integration.
+The same checks can be run in order with `pnpm verify`. The unit suite covers command parsing, workspace-tree invariants, stock calculations, SIC/market-cap classification, research adapters, technical indicators, options analytics, scanner rules, advanced analytics, cache boundaries/LRU behavior, freshness labels, news/event deduplication, alert cooldowns, persistence invariants, and credential boundaries. `test:render` is the production-render smoke test, and `verify:client-bundle` rejects provider credential material in client assets. Use mock mode for repeatable, network-free application verification; a live provider key and database are only needed for live entitlement checks and personal persistence integration.
 
 ## Project map
 
@@ -276,8 +313,11 @@ hooks/useResearchData.ts      Client fetch/poll/session response cache
 lib/commands/                 Command parser and fuzzy ranking
 lib/workspace/                Serializable layout tree and reducer
 lib/massive/                  Server-only client, schemas, adapters and services
+lib/services/                 Provider-neutral service capability contracts
 lib/mock/                     Deterministic research provider
 lib/cache/                    Cache contract, TTL policy and memory adapter
+lib/freshness/                Data-age/session normalization and display labels
+lib/alerts/                   Shared alert duplicate/cooldown evaluation
 lib/indicators/               Technical indicator calculations
 lib/options/                  Chain, activity, Greeks and strategy analytics
 lib/scanner/                  Scanner definitions and evaluation

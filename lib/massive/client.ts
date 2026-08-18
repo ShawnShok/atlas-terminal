@@ -79,13 +79,13 @@ function statusError(
   switch (response.status) {
     case 401:
       return new ProviderError(
-        "UNAUTHORIZED",
+        "INVALID_API_KEY",
         "Massive rejected the server credentials.",
         common,
       );
     case 403:
       return new ProviderError(
-        "FORBIDDEN",
+        "ENTITLEMENT_REQUIRED",
         "The current Massive subscription does not allow this request.",
         common,
       );

@@ -476,11 +476,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .data-badge i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
 .data-badge.is-live { color: var(--green); }
 .data-badge.is-mock,
+.data-badge.is-stale,
 .data-badge.is-delayed,
 .data-badge.is-indicative,
 .data-badge.is-unknown { color: var(--amber); }
 .data-badge.is-historical,
+.data-badge.is-closed,
 .data-badge.is-end-of-day { color: var(--blue); }
+.data-badge.is-unavailable { color: var(--red); }
 .freshness-refreshing { margin-left: auto; color: var(--blue); }
 
 .live-stock-module { min-height: 100%; background: var(--bg-panel); }
@@ -496,6 +499,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .dashboard-intel-strip article button { overflow: hidden; height: 31px; padding: 0 8px; border: 0; border-left: 1px solid var(--line); background: transparent; color: #8795a3; cursor: pointer; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
 .dashboard-intel-strip article button:hover { color: #c9d4dd; background: #101720; }
 .dashboard-intel-strip article b { color: var(--amber); }
+.dashboard-intel-empty { min-height: 48px; margin: 0; padding: 12px 9px; color: #617183; font: 700 7px/1.4 var(--mono); letter-spacing: .06em; }
 
 .market-universe-panel { min-height: 100%; background: #090d12; }
 .market-universe-panel > header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 8px 11px; border-bottom: 1px solid var(--line); }

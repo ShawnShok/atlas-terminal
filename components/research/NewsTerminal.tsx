@@ -263,6 +263,7 @@ export function HeadlineStream({ articles, nowIso, onSelect }: HeadlineStreamPro
 
 export interface NewsTerminalProps {
   readonly status: ResearchDataStatus;
+  readonly providerLabel?: string;
   readonly filters: NewsFiltersValue;
   readonly sectors: readonly string[];
   readonly articles: readonly NewsArticle[];
@@ -277,6 +278,7 @@ export interface NewsTerminalProps {
 
 export function NewsTerminal({
   status,
+  providerLabel = "MARKET NEWS",
   filters,
   sectors,
   articles,
@@ -291,7 +293,7 @@ export function NewsTerminal({
   return (
     <ResearchFrame
       title="NEWS TERMINAL"
-      eyebrow="BENZINGA DATASET"
+      eyebrow={providerLabel}
       status={status}
       className="research-news-terminal"
       footer={headlineMode ? <HeadlineStream articles={articles} nowIso={nowIso} onSelect={onArticleSelect} /> : undefined}
@@ -310,4 +312,3 @@ export function NewsTerminal({
     </ResearchFrame>
   );
 }
-

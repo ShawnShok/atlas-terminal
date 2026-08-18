@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ResearchService } from "@/lib/services";
 import type {
   AggregateBar,
   CorporateEvent,
@@ -309,7 +310,7 @@ function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle
   return { underlyingSymbol: symbol, underlyingPrice, expirations, selectedExpiration, contracts, asOf: MOCK_AS_OF, quality: "indicative" };
 }
 
-export class MockResearchService {
+export class MockResearchService implements ResearchService {
   async searchTickers(queryInput: string, limit = 20): Promise<readonly TickerSearchResult[]> {
     const query = queryInput.trim().toUpperCase();
     return SYMBOLS.filter((symbol) =>

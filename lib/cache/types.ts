@@ -25,6 +25,8 @@ export interface CacheStore {
 export type CacheNamespace =
   | "quote"
   | "snapshot"
+  | "intraday"
+  | "option"
   | "news"
   | "event"
   | "reference"
@@ -35,6 +37,8 @@ export type CacheNamespace =
 export interface CacheTtlConfig {
   readonly quote: number;
   readonly snapshot: number;
+  readonly intraday: number;
+  readonly option: number;
   readonly news: number;
   readonly event: number;
   readonly reference: number;

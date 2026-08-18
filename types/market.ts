@@ -10,6 +10,18 @@ export type DataQuality =
   | "indicative"
   | "unknown";
 
+/** Operational state presented to users after quality, age, and session are evaluated. */
+export type DataFreshnessStatus =
+  | "live"
+  | "delayed"
+  | "stale"
+  | "closed"
+  | "historical"
+  | "end-of-day"
+  | "indicative"
+  | "unknown"
+  | "unavailable";
+
 export type MarketSession =
   | "pre-market"
   | "regular"
@@ -21,6 +33,15 @@ export interface DataFreshness {
   readonly asOf: string;
   readonly quality: DataQuality;
   readonly source: MarketDataSource;
+}
+
+/** Provider-independent freshness description used by API envelopes and compound views. */
+export interface DataFreshnessState {
+  readonly status: DataFreshnessStatus;
+  readonly delayMinutes: number | null;
+  readonly lastUpdatedAt: string | null;
+  readonly source: string;
+  readonly marketSession: MarketSession | null;
 }
 
 export interface Quote extends DataFreshness {

@@ -1,6 +1,9 @@
 import type {
   AggregateBar,
   CorporateEvent,
+  CorporateEventStatus,
+  CorporateEventType,
+  DataFreshnessState,
   DataQuality,
   FinancialLineItem,
   NewsArticle,
@@ -58,6 +61,81 @@ export interface WatchlistResearchBundle {
   readonly name: string;
   readonly symbols: readonly string[];
   readonly snapshots: readonly MarketSnapshotRow[];
+}
+
+export interface NewsSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly publishedAt: string;
+  readonly articleUrl: string | null;
+  readonly publisher: string;
+}
+
+export interface CorporateEventSummary {
+  readonly id: string;
+  readonly type: CorporateEventType;
+  readonly status: CorporateEventStatus;
+  readonly title: string;
+  readonly startsAt: string;
+  readonly daysUntil: number;
+}
+
+export interface OptionsActivitySummary {
+  readonly observed: boolean;
+  readonly label: string;
+  readonly highestVolumeContract: string | null;
+  readonly volumeToOpenInterest: number | null;
+  readonly asOf: string | null;
+}
+
+/** Provider-neutral row contract for durable and session watchlists. */
+export interface WatchlistQuote {
+  readonly ticker: string;
+  readonly companyName: string | null;
+  readonly price: number | null;
+  readonly change: number | null;
+  readonly changePercent: number | null;
+  readonly bid: number | null;
+  readonly ask: number | null;
+  readonly dayHigh: number | null;
+  readonly dayLow: number | null;
+  readonly previousClose: number | null;
+  readonly volume: number | null;
+  readonly averageVolume: number | null;
+  readonly dailyRvol: number | null;
+  readonly intradayRvol: number | null;
+  readonly vwap: number | null;
+  readonly distanceFromVwapPercent: number | null;
+  readonly marketCap: number | null;
+  readonly latestNews: NewsSummary | null;
+  readonly nextEvent: CorporateEventSummary | null;
+  readonly optionsActivity: OptionsActivitySummary | null;
+  readonly freshness: DataFreshnessState;
+}
+
+export type CatalystReasonCategory =
+  | "price"
+  | "volume"
+  | "technical"
+  | "news"
+  | "event"
+  | "options";
+
+export interface CatalystReason {
+  readonly category: CatalystReasonCategory;
+  readonly title: string;
+  readonly explanation: string;
+  readonly observedValue?: number | string;
+  readonly threshold?: number | string;
+  readonly timestamp?: string;
+}
+
+export interface CatalystScannerResult {
+  readonly ticker: string;
+  /** Transparent research-priority score, never a return prediction. */
+  readonly researchPriority: number | null;
+  readonly reasons: readonly CatalystReason[];
+  readonly freshness: DataFreshnessState;
 }
 
 export interface NewsResearchBundle {
@@ -152,6 +230,7 @@ export interface TerminalApiMeta {
   readonly source: string;
   readonly quality: DataQuality;
   readonly asOf: string;
+  readonly freshness: DataFreshnessState;
 }
 
 export interface TerminalApiSuccess<T> {

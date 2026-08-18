@@ -10,8 +10,8 @@ datasource db {
 // Production owner IDs are derived from the authenticated account. The
 // `primary` default remains only for local development and migration fixtures.
 model UserSettings {
-  id                  String           @id @default("primary")
-  timezone            String           @default("America/New_York")
+  id                  String            @id @default("primary")
+  timezone            String            @default("America/New_York")
   defaultWatchlistId  String?
   defaultWorkspaceId  String?
   chartDefaults       Json?
@@ -20,15 +20,17 @@ model UserSettings {
   newsFilters         Json?
   eventFilters        Json?
   refreshPreferences  Json?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  defaultWatchlist    Watchlist?       @relation("DefaultWatchlist", fields: [defaultWatchlistId], references: [id], onDelete: SetNull)
-  defaultWorkspace    SavedWorkspace?  @relation("DefaultWorkspace", fields: [defaultWorkspaceId], references: [id], onDelete: SetNull)
-  watchlists          Watchlist[]      @relation("OwnerWatchlists")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  defaultWatchlist    Watchlist?        @relation("DefaultWatchlist", fields: [defaultWatchlistId], references: [id], onDelete: SetNull)
+  defaultWorkspace    SavedWorkspace?   @relation("DefaultWorkspace", fields: [defaultWorkspaceId], references: [id], onDelete: SetNull)
+  watchlists          Watchlist[]       @relation("OwnerWatchlists")
   savedScanners       SavedScanner[]
+  scannerRuns         ScannerRun[]
   alerts              Alert[]
-  savedWorkspaces     SavedWorkspace[] @relation("OwnerWorkspaces")
+  savedWorkspaces     SavedWorkspace[]  @relation("OwnerWorkspaces")
   notes               Notes[]
+  readNewsArticles    ReadNewsArticle[]
 
   @@index([defaultWatchlistId])
   @@index([defaultWorkspaceId])
@@ -36,17 +38,19 @@ model UserSettings {
 
 model Watchlist {
   id                String            @id @default(cuid())
-  ownerId           String            @default("primary")
+  ownerId           String
   name              String
   description       String?
   position          Int               @default(0)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tickers           WatchlistTicker[]
+  alerts            Alert[]
   owner             UserSettings      @relation("OwnerWatchlists", fields: [ownerId], references: [id], onDelete: Cascade)
   settingsAsDefault UserSettings[]    @relation("DefaultWatchlist")
 
   @@unique([ownerId, name])
+  @@unique([id, ownerId])
   @@index([ownerId, position])
 }
 
@@ -64,18 +68,85 @@ model WatchlistTicker {
 }
 
 model SavedScanner {
-  id          String       @id @default(cuid())
-  ownerId     String       @default("primary")
+  id          String             @id @default(cuid())
+  ownerId     String
   name        String
   description String?
   definition  Json
-  isPreset    Boolean      @default(false)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  owner       UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  isPreset    Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  owner       UserSettings       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  conditions  ScannerCondition[]
+  runs        ScannerRun[]
 
   @@unique([ownerId, name])
   @@index([ownerId, updatedAt])
+}
+
+model ScannerCondition {
+  id             String       @id @default(cuid())
+  scannerId      String
+  position       Int          @default(0)
+  field          String
+  operator       String
+  value          Json
+  secondaryValue Json?
+  unit           String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  scanner        SavedScanner @relation(fields: [scannerId], references: [id], onDelete: Cascade)
+
+  @@unique([scannerId, position])
+  @@index([scannerId, updatedAt])
+}
+
+enum ScannerRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+model ScannerRun {
+  id             String           @id @default(cuid())
+  ownerId        String
+  scannerId      String?
+  status         ScannerRunStatus @default(PENDING)
+  definition     Json
+  universe       Json?
+  candidateCount Int?
+  matchCount     Int?
+  durationMs     Int?
+  errorCode      String?
+  errorMessage   String?
+  startedAt      DateTime         @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  owner          UserSettings     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  scanner        SavedScanner?    @relation(fields: [scannerId], references: [id], onDelete: SetNull)
+  results        ScannerResult[]
+
+  @@index([ownerId, startedAt])
+  @@index([scannerId, startedAt])
+  @@index([status, startedAt])
+}
+
+model ScannerResult {
+  id        String     @id @default(cuid())
+  runId     String
+  symbol    String     @db.VarChar(15)
+  position  Int        @default(0)
+  score     Float?
+  payload   Json
+  createdAt DateTime   @default(now())
+  run       ScannerRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, symbol])
+  @@index([runId, position])
+  @@index([symbol, createdAt])
 }
 
 enum AlertType {
@@ -85,29 +156,43 @@ enum AlertType {
   NEWS
   EVENT
   TECHNICAL
+  OPTIONS
 }
 
 model Alert {
-  id              String       @id @default(cuid())
-  ownerId         String       @default("primary")
-  name            String?
-  type            AlertType
-  symbol          String?      @db.VarChar(15)
-  configuration   Json
-  enabled         Boolean      @default(true)
-  lastTriggeredAt DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  owner           UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  ownerId           String
+  watchlistId       String?
+  name              String?
+  type              AlertType
+  symbol            String?      @db.VarChar(15)
+  configuration     Json
+  enabled           Boolean      @default(true)
+  cooldownMinutes   Int          @default(0)
+  deliveryChannels  String[]     @default([])
+  lastEvaluatedAt   DateTime?
+  nextEvaluationAt  DateTime?
+  lastTriggeredAt   DateTime?
+  lastDeliveredAt   DateTime?
+  lastDeliveryKey   String?
+  lastDeliveryError String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  owner             UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  watchlist         Watchlist?   @relation(fields: [watchlistId, ownerId], references: [id, ownerId], onDelete: Cascade)
 
   @@index([ownerId, enabled])
+  @@index([ownerId, updatedAt])
+  @@index([ownerId, symbol, type])
   @@index([enabled, type])
+  @@index([enabled, type, nextEvaluationAt])
+  @@index([watchlistId])
   @@index([symbol])
 }
 
 model SavedWorkspace {
   id                String         @id @default(cuid())
-  ownerId           String         @default("primary")
+  ownerId           String
   name              String
   layout            Json
   createdAt         DateTime       @default(now())
@@ -134,7 +219,7 @@ model CachedSecurityMetadata {
 
 model Notes {
   id        String       @id @default(cuid())
-  ownerId   String       @default("primary")
+  ownerId   String
   symbol    String       @db.VarChar(15)
   title     String?
   body      String       @db.Text
@@ -144,5 +229,61 @@ model Notes {
 
   @@index([ownerId, updatedAt])
   @@index([ownerId, symbol])
+  @@index([ownerId, symbol, updatedAt])
   @@index([symbol, updatedAt])
+}
+
+model ReadNewsArticle {
+  id        String       @id @default(cuid())
+  ownerId   String
+  source    String       @db.VarChar(40)
+  articleId String
+  readAt    DateTime     @default(now())
+  owner     UserSettings @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, source, articleId])
+  @@index([ownerId, readAt])
+  @@index([source, articleId])
+}
+
+model CachedEvent {
+  id              String   @id @default(cuid())
+  source          String   @db.VarChar(40)
+  providerEventId String
+  dedupeKey       String   @unique
+  symbol          String   @db.VarChar(15)
+  eventType       String
+  startsAt        DateTime
+  payload         Json
+  asOf            DateTime
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([source, providerEventId])
+  @@index([symbol, startsAt])
+  @@index([expiresAt])
+  @@index([source, asOf])
+}
+
+model CachedNewsMetadata {
+  id          String   @id @default(cuid())
+  source      String   @db.VarChar(40)
+  articleId   String
+  dedupeKey   String   @unique
+  publishedAt DateTime
+  symbols     String[] @default([])
+  categories  String[] @default([])
+  payload     Json
+  asOf        DateTime
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([source, articleId])
+  @@index([publishedAt])
+  @@index([expiresAt])
+  @@index([source, asOf])
+  @@index([symbols], type: Gin)
+  @@index([categories], type: Gin)
 }

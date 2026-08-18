@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getServerEnv } from "@/lib/env";
-import { normalizeError } from "@/lib/errors";
+import { AppError, normalizeError } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ const noteSchema = z.object({
 
 const alertSchema = z.object({
   name: z.string().trim().max(120).nullable().optional(),
-  type: z.enum(["PRICE", "PERCENT_CHANGE", "RELATIVE_VOLUME", "NEWS", "EVENT", "TECHNICAL"]),
+  type: z.enum(["PRICE", "PERCENT_CHANGE", "RELATIVE_VOLUME", "NEWS", "EVENT", "OPTIONS", "TECHNICAL"]),
   symbol: tickerSchema.nullable().optional(),
   configuration: jsonObjectSchema,
   enabled: z.boolean().default(true),
@@ -29,8 +29,8 @@ const alertSchema = z.object({
 
 const settingsSchema = z.object({
   timezone: z.string().trim().min(1).max(80).optional(),
-  defaultWatchlistId: z.string().nullable().optional(),
-  defaultWorkspaceId: z.string().nullable().optional(),
+  defaultWatchlistId: identifierSchema.nullable().optional(),
+  defaultWorkspaceId: identifierSchema.nullable().optional(),
   chartDefaults: jsonObjectSchema.optional(),
   preferredIndicators: z.array(z.string().max(40)).max(30).optional(),
   scannerDefaults: jsonObjectSchema.optional(),
@@ -101,6 +101,31 @@ async function database() {
 
 async function ensureOwner(db: NonNullable<Awaited<ReturnType<typeof database>>>, ownerId: string) {
   await db.userSettings.upsert({ where: { id: ownerId }, update: {}, create: { id: ownerId } });
+}
+
+async function assertOwnedSettingsReferences(
+  db: NonNullable<Awaited<ReturnType<typeof database>>>,
+  ownerId: string,
+  input: z.infer<typeof settingsSchema>,
+) {
+  if (input.defaultWatchlistId) {
+    const watchlist = await db.watchlist.findFirst({
+      where: { id: input.defaultWatchlistId, ownerId },
+      select: { id: true },
+    });
+    if (!watchlist) {
+      throw new AppError("VALIDATION_ERROR", "The selected default watchlist is not available to this account.");
+    }
+  }
+  if (input.defaultWorkspaceId) {
+    const workspace = await db.savedWorkspace.findFirst({
+      where: { id: input.defaultWorkspaceId, ownerId },
+      select: { id: true },
+    });
+    if (!workspace) {
+      throw new AppError("VALIDATION_ERROR", "The selected default workspace is not available to this account.");
+    }
+  }
 }
 
 function requestResource(request: NextRequest) {
@@ -195,6 +220,7 @@ export async function POST(request: NextRequest) {
     }
     if (resource === "settings") {
       const input = settingsSchema.parse(body);
+      await assertOwnedSettingsReferences(db, ownerId, input);
       const data = {
         ...input,
         chartDefaults: input.chartDefaults === undefined ? undefined : jsonValue(input.chartDefaults),

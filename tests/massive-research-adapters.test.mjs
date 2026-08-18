@@ -77,6 +77,13 @@ test("option-chain quality is conservative across mixed timeframe fields", () =>
   assert.equal(delayed.quality, "delayed");
 });
 
+test("snapshot timestamp normalization accepts Unix seconds", () => {
+  const rows = adapters.adaptSnapshotList({
+    tickers: [{ ticker: "NVDA", updated: 1_723_737_600 }],
+  });
+  assert.equal(rows[0].asOf, "2024-08-15T16:00:00.000Z");
+});
+
 test("financial adapters preserve missing values as missing instead of zero", () => {
   const periods = adapters.adaptFinancialPeriods({ results: [{
     tickers: ["NVDA"],

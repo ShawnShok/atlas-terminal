@@ -5,6 +5,12 @@ import { z } from "zod";
 import type { CacheTtlConfig } from "@/lib/cache";
 import { AppError, isAppError } from "@/lib/errors";
 import type {
+  BenzingaNewsQuery,
+  CorporateEventsQuery,
+  OptionChainQuery,
+  ResearchService,
+} from "@/lib/services";
+import type {
   EventsResearchBundle,
   FinancialResearchBundle,
   MarketMovers,
@@ -38,6 +44,12 @@ import {
 } from "./research-schemas";
 import type { MassiveClient, MassiveQueryValue } from "./client";
 
+export type {
+  BenzingaNewsQuery,
+  CorporateEventsQuery,
+  OptionChainQuery,
+} from "@/lib/services";
+
 const tickerSchema = z
   .string()
   .trim()
@@ -53,29 +65,6 @@ const DEFAULT_RESEARCH_UNIVERSE = [
   "MU", "QCOM", "AMAT", "PLTR", "PANW", "ARM", "SMCI", "UBER",
   "SPY", "QQQ", "DIA", "IWM", "XLK", "XLF", "XLE", "XLV", "XLY",
 ] as const;
-
-export interface BenzingaNewsQuery {
-  readonly ticker?: string;
-  readonly publishedAfter?: string;
-  readonly category?: string;
-  readonly keyword?: string;
-  readonly limit?: number;
-}
-
-export interface CorporateEventsQuery {
-  readonly ticker?: string;
-  readonly from: string;
-  readonly to: string;
-  readonly type?: string;
-  readonly limit?: number;
-}
-
-export interface OptionChainQuery {
-  readonly symbol: string;
-  readonly expiration?: string;
-  readonly strikeMin?: number;
-  readonly strikeMax?: number;
-}
 
 type PagedResponse<T> = {
   readonly next_url?: string;
@@ -110,7 +99,7 @@ function normalizeSymbols(values: readonly string[]): readonly string[] {
   return unique;
 }
 
-export class MassiveResearchService {
+export class MassiveResearchService implements ResearchService {
   readonly #baseOrigin: string;
   readonly #client: MassiveClient;
   readonly #ttls: CacheTtlConfig;
@@ -231,7 +220,9 @@ export class MassiveResearchService {
       },
       schema: massiveTmxEventsResponseSchema,
       cacheTtlMs: this.#ttls.event,
-      staleIfErrorMs: this.#ttls.staleIfError,
+      // TMX does not expose a feed-update timestamp in this response. Avoid
+      // serving stale fallback data that could be labeled as newly fetched.
+      staleIfErrorMs: 0,
     });
     return { events: adaptTmxEvents(response), filterTicker: ticker ?? null, from, to };
   }
@@ -276,12 +267,12 @@ export class MassiveResearchService {
         order: "asc",
       },
       schema: massiveOptionChainResponseSchema,
-      cacheTtlMs: this.#ttls.snapshot,
+      cacheTtlMs: this.#ttls.option,
       // Option snapshots carry provider freshness labels. Do not serve a stale
       // fallback that could preserve an outdated LIVE badge during an outage.
       staleIfErrorMs: 0,
     });
-    const pages = await this.#collectPages(response, massiveOptionChainResponseSchema, 4, this.#ttls.snapshot);
+    const pages = await this.#collectPages(response, massiveOptionChainResponseSchema, 4, this.#ttls.option);
     const combined: MassiveOptionChainResponse = {
       ...response,
       next_url: undefined,
@@ -332,7 +323,7 @@ export class MassiveResearchService {
     const unavailableSections: string[] = [];
     const unwrap = <T>(result: PromiseSettledResult<T>, section: string, empty: T): T => {
       if (result.status === "fulfilled") return result.value;
-      if (isAppError(result.reason) && ["FORBIDDEN", "NOT_FOUND"].includes(result.reason.code)) {
+      if (isAppError(result.reason) && ["ENTITLEMENT_REQUIRED", "FORBIDDEN", "NOT_FOUND"].includes(result.reason.code)) {
         unavailableSections.push(section);
         return empty;
       }

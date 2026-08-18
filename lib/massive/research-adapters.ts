@@ -186,7 +186,6 @@ function inferNewsCategories(values: readonly string[]): readonly NewsCategory[]
 export function adaptBenzingaNews(
   response: MassiveBenzingaNewsResponse,
 ): readonly NewsArticle[] {
-  const fetchedAt = new Date().toISOString();
   const seen = new Set<string>();
   return (response.results ?? []).flatMap((raw) => {
     if (!raw.benzinga_id || !raw.title || !raw.published) return [];
@@ -212,7 +211,7 @@ export function adaptBenzingaNews(
         logoUrl: null,
         faviconUrl: null,
       },
-      asOf: fetchedAt,
+      asOf: raw.last_updated ?? raw.published,
       quality: "live" as const,
       source: "benzinga" as const,
     }];

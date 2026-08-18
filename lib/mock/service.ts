@@ -1,9 +1,9 @@
 import { AppError } from "@/lib/errors";
 import type {
   AggregateBarsInput,
-  MarketDataService,
   NewsQuery,
-} from "@/lib/massive/service";
+  StockMarketDataService,
+} from "@/lib/services";
 import type {
   AggregateBar,
   NewsArticle,
@@ -18,7 +18,7 @@ import {
   MOCK_TICKER_DETAILS,
 } from "./market-data";
 
-export class MockMarketDataService implements MarketDataService {
+export class MockMarketDataService implements StockMarketDataService {
   async getSnapshot(symbol: string): Promise<Snapshot> {
     this.#assertSupported(symbol);
     return MOCK_SNAPSHOT;
@@ -33,16 +33,25 @@ export class MockMarketDataService implements MarketDataService {
     input: AggregateBarsInput,
   ): Promise<readonly AggregateBar[]> {
     this.#assertSupported(input.symbol);
-    return MOCK_AGGREGATE_BARS.filter(
+    const bars = MOCK_AGGREGATE_BARS.filter(
       (bar) => bar.timestamp.slice(0, 10) >= input.from && bar.timestamp.slice(0, 10) <= input.to,
     );
+    const ordered = input.sort === "desc" ? [...bars].reverse() : bars;
+    return ordered.slice(0, input.limit ?? ordered.length);
   }
 
   async getNews(input: NewsQuery = {}): Promise<readonly NewsArticle[]> {
     const symbol = input.symbol?.trim().toUpperCase();
-    return MOCK_NEWS.filter(
-      (article) => !symbol || article.tickers.some((ticker) => ticker === symbol),
-    ).slice(0, input.limit ?? 50);
+    const publishedAfter = input.publishedAfter ? Date.parse(input.publishedAfter) : null;
+    const articles = MOCK_NEWS.filter((article) =>
+      (!symbol || article.tickers.some((ticker) => ticker === symbol))
+      && (publishedAfter === null
+        || !Number.isFinite(publishedAfter)
+        || Date.parse(article.publishedAt) >= publishedAfter));
+    const ordered = [...articles].sort((left, right) =>
+      (input.order === "asc" ? 1 : -1)
+      * (Date.parse(left.publishedAt) - Date.parse(right.publishedAt)));
+    return ordered.slice(0, input.limit ?? 50);
   }
 
   #assertSupported(symbol: string): void {

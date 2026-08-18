@@ -1,4 +1,5 @@
 import type { ResearchDataStatus } from "@/lib/research";
+import { freshnessLabel } from "@/lib/freshness";
 import type { TerminalApiMeta } from "@/types";
 
 export function researchStatus(
@@ -17,13 +18,13 @@ export function researchStatus(
   if (meta.mode === "mock") {
     return { mode: "mock", label: "MOCK DATA", asOf: meta.asOf, message: "Synthetic development data" };
   }
-  const mode = meta.quality === "live"
+  const mode = meta.freshness.status === "live"
     ? "live"
-    : meta.quality === "delayed" || meta.quality === "indicative"
-      ? "delayed"
-      : meta.quality === "historical" || meta.quality === "end-of-day"
+    : meta.freshness.status === "historical" || meta.freshness.status === "end-of-day" || meta.freshness.status === "closed"
         ? "historical"
-        : "delayed";
-  const label = meta.quality === "unknown" ? "TIMING UNVERIFIED" : meta.quality.toUpperCase();
+        : meta.freshness.status === "unavailable"
+          ? "unavailable"
+          : "delayed";
+  const label = freshnessLabel(meta.freshness);
   return { mode, label, asOf: meta.asOf, message: meta.source };
 }
