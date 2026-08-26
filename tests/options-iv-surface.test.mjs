@@ -108,12 +108,15 @@ test("options terminal exposes the interactive IV surface and API source", async
     readFile(new URL("../lib/massive/research-service.ts", import.meta.url), "utf8"),
   ]);
   assert.match(terminal, /IV SURFACE/);
+  assert.match(terminal, /MULTI-EXPIRY/);
+  assert.match(terminal, /props\.initialPrimaryView \?\? "chain"/);
   assert.match(terminal, /role="tablist"/);
   assert.match(component, /BLENDED/);
   assert.match(component, /FRONT ATM IV/);
   assert.match(component, /TERM SLOPE/);
   assert.match(component, /NO INTERPOLATION/);
   assert.match(livePanel, /useResearchData<OptionIvSurfaceBundle>\("options-surface"/);
+  assert.match(livePanel, /initialView = "chain"/);
   assert.match(route, /case "options-surface"/);
   assert.match(service, /getOptionIvSurface/);
   assert.match(service, /mapWithProviderConcurrency\(requestedExpirations, 3/);

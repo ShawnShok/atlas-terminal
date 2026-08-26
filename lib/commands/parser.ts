@@ -41,6 +41,7 @@ export const DEFAULT_COMMAND_REGISTRY = {
     { keyword: "CHART", kind: "chart" },
     { keyword: "NEWS", kind: "news" },
     { keyword: "OPT", kind: "options" },
+    { keyword: "IV", kind: "options-surface" },
     { keyword: "FIN", kind: "financials" },
     { keyword: "EVENTS", kind: "events" },
   ],
@@ -51,6 +52,8 @@ export const DEFAULT_COMMAND_REGISTRY = {
     { keyword: "EVENTS", kind: "events" },
     { keyword: "SCAN", kind: "scanner" },
     { keyword: "WATCH", kind: "watchlist" },
+    { keyword: "PORTFOLIO", kind: "portfolio" },
+    { keyword: "SCREENS", kind: "saved-screens" },
     { keyword: "EARNINGS", kind: "earnings" },
   ],
   tickerListCommands: [
@@ -217,6 +220,13 @@ export const DEFAULT_COMMAND_CATALOG: readonly CommandSuggestion[] = [
     keywords: ["calls", "puts", "derivatives"],
   },
   {
+    id: "command:iv-surface",
+    label: "Open implied-volatility surface",
+    kind: "command",
+    command: "<TICKER> IV",
+    keywords: ["options", "volatility", "skew", "term structure"],
+  },
+  {
     id: "command:financials",
     label: "Open company financials",
     kind: "command",
@@ -250,6 +260,20 @@ export const DEFAULT_COMMAND_CATALOG: readonly CommandSuggestion[] = [
     kind: "page",
     command: "SCAN",
     keywords: ["screener", "filters"],
+  },
+  {
+    id: "page:saved-screens",
+    label: "Saved screens",
+    kind: "page",
+    command: "SCREENS",
+    keywords: ["saved", "scanner", "presets"],
+  },
+  {
+    id: "page:portfolio",
+    label: "Portfolio workspace",
+    kind: "page",
+    command: "PORTFOLIO",
+    keywords: ["holdings", "positions", "exposure"],
   },
   {
     id: "page:news",

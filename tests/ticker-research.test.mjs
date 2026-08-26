@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [navigation, panelContent, stockTerminal, workspace, workspacePanel, researchRoute] = await Promise.all([
+const [navigation, panelContent, stockTerminal, workspace, workspacePanel, researchRoute, shell, utilities] = await Promise.all([
   readFile(new URL("../components/stocks/TickerResearchNav.tsx", import.meta.url), "utf8"),
   readFile(new URL("../components/terminal/PanelContent.tsx", import.meta.url), "utf8"),
   readFile(new URL("../components/stocks/StockTerminal.tsx", import.meta.url), "utf8"),
   readFile(new URL("../components/terminal/Workspace.tsx", import.meta.url), "utf8"),
   readFile(new URL("../components/terminal/WorkspacePanel.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/api/research/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../components/terminal/TerminalShell.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../components/terminal/UtilityPanels.tsx", import.meta.url), "utf8"),
 ]);
 
 test("ticker research exposes every connected research tab", () => {
@@ -18,6 +20,25 @@ test("ticker research exposes every connected research tab", () => {
   assert.match(panelContent, /case "timeline"/);
   assert.match(panelContent, /initialView="catalysts"/);
   assert.match(panelContent, /TickerResearchNav/);
+});
+
+test("sidebar portfolio and saved screens open dedicated interactive destinations", () => {
+  assert.match(shell, /portfolio: "portfolio"/);
+  assert.match(shell, /screens: "saved-screens"/);
+  assert.match(shell, /view === "portfolio"/);
+  assert.match(shell, /view === "saved-screens"/);
+  assert.match(panelContent, /case "portfolio"/);
+  assert.match(panelContent, /case "saved-screens"/);
+  assert.match(utilities, /NO PORTFOLIO SOURCE CONNECTED/);
+  assert.match(utilities, /onOpenScanner\(record\.id\)/);
+  assert.match(utilities, /CREATE SCREEN/);
+});
+
+test("the IV surface has a direct panel and command destination", () => {
+  assert.match(panelContent, /case "options-surface"/);
+  assert.match(panelContent, /initialView="iv-surface"/);
+  assert.match(navigation, /activeView === "options-surface" && tab\.view === "options"/);
+  assert.match(shell, /"options-surface": "options-surface"/);
 });
 
 test("ticker header hides unavailable quote fields instead of presenting placeholders", () => {

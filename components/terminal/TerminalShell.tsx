@@ -61,7 +61,7 @@ function isTypingTarget(target: EventTarget | null) {
 
 const PANEL_VIEWS = new Set<PanelView>([
   "dashboard", "security", "chart", "financials", "market", "movers", "watchlist",
-  "news", "events", "earnings", "options", "scanner", "analytics", "alerts", "notes",
+  "news", "events", "earnings", "options", "options-surface", "scanner", "saved-screens", "portfolio", "analytics", "alerts", "notes",
   "timeline",
   "settings", "activity", "system", "shortcuts",
 ]);
@@ -229,11 +229,14 @@ export function TerminalShell() {
       news: "news",
       events: "events",
       options: "options",
+      "options-surface": "options-surface",
       financials: "financials",
       market: "market",
       movers: "movers",
       scanner: "scanner",
       watchlist: "watchlist",
+      portfolio: "portfolio",
+      "saved-screens": "saved-screens",
       earnings: "earnings",
     };
     const nextView = viewByIntent[intent.kind];
@@ -361,7 +364,9 @@ export function TerminalShell() {
             if (view === "events" || view === "earnings") return "events";
             if (view === "watchlist") return "watchlists";
             if (view === "security" || view === "chart" || view === "financials" || view === "notes") return "stocks";
-            if (view === "options") return "options";
+            if (view === "options" || view === "options-surface") return "options";
+            if (view === "portfolio") return "portfolio";
+            if (view === "saved-screens") return "screens";
             if (view === "alerts") return "alerts";
             if (view === "settings" || view === "system") return "settings";
             return "home";
@@ -377,15 +382,15 @@ export function TerminalShell() {
               watchlists: "watchlist",
               stocks: "security",
               options: "options",
-              portfolio: "system",
+              portfolio: "portfolio",
               alerts: "alerts",
-              screens: "scanner",
+              screens: "saved-screens",
               settings: "settings",
             };
             setComparisonSymbols([]);
             const nextView = navigation[item.id] ?? "dashboard";
             setPanelView(activePanelId, nextView, item.id === "news" || item.id === "events" ? "all" : "ticker");
-            notify(`${item.label.toUpperCase()} OPENED`, item.id === "portfolio" ? "No brokerage or holdings source is configured; capability status is shown instead." : "The module is active in the current panel.");
+            notify(`${item.label.toUpperCase()} OPENED`, item.id === "portfolio" ? "Portfolio workspace opened; unconnected holdings remain explicitly unavailable." : "The module is active in the current panel.");
           }}
         />
 

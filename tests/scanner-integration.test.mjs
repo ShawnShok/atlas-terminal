@@ -55,6 +55,9 @@ test("saved scanners use the owner-scoped personal API with a session fallback",
   assert.match(savedHook, /connect PostgreSQL for durability/i);
   assert.match(panel, /onDeleteSavedPreset/);
   assert.match(panel, /onDuplicate/);
+  assert.match(panel, /savedScanners\.records\.find\(\(candidate\) => candidate\.id === commandTarget\.scannerPresetId\)/);
+  assert.match(panel, /enginePreset\?\.rule \?\? savedRules\.get/);
+  assert.match(panel, /setActivePresetId\(commandTarget\.scannerPresetId/);
 });
 
 test("session watchlists are shared across research modules and survive view remounts", () => {

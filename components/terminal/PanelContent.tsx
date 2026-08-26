@@ -19,6 +19,7 @@ import {
   LiveWatchlistPanel,
 } from "./LiveStockPanels";
 import { PersonalResearchPanel } from "./PersonalResearchPanel";
+import { PortfolioPanel, SavedScreensPanel } from "./UtilityPanels";
 import {
   TickerResearchNav,
   TICKER_RESEARCH_VIEWS,
@@ -83,6 +84,13 @@ export function PanelContent({
     readonly ticker: string;
     readonly target: WatchlistResearchTarget;
   } | null>(null);
+  const [savedScreenTarget, setSavedScreenTarget] = useState<{
+    readonly baseCommandTarget: WorkspaceCommandTarget | null | undefined;
+    readonly target: WorkspaceCommandTarget;
+  } | null>(null);
+  const effectiveCommandTarget = savedScreenTarget && savedScreenTarget.baseCommandTarget === commandTarget
+    ? savedScreenTarget.target
+    : commandTarget;
   const openSecurity = (symbol: string) => {
     onTickerChange(symbol);
     onViewChange("security");
@@ -147,11 +155,14 @@ export function PanelContent({
     case "options":
       content = <LiveOptionsPanel ticker={ticker} />;
       break;
+    case "options-surface":
+      content = <LiveOptionsPanel ticker={ticker} initialView="iv-surface" />;
+      break;
     case "scanner":
       content = <LiveScannerPanel
         ticker={ticker}
         similarSeed={similarSeed}
-        commandTarget={commandTarget}
+        commandTarget={effectiveCommandTarget}
         onTickerSelect={(symbol, context) => {
           setScannerContext(context);
           openSecurity(symbol);
@@ -162,6 +173,24 @@ export function PanelContent({
           onViewChange(nextView);
         }}
       />;
+      break;
+    case "saved-screens":
+      content = <SavedScreensPanel
+        onCreateScanner={() => onViewChange("scanner")}
+        onOpenScanner={(scannerPresetId) => {
+          setSavedScreenTarget((current) => ({
+            baseCommandTarget: commandTarget,
+            target: {
+              sequence: Math.max(current?.target.sequence ?? 0, commandTarget?.sequence ?? 0) + 1,
+              scannerPresetId,
+            },
+          }));
+          onViewChange("scanner");
+        }}
+      />;
+      break;
+    case "portfolio":
+      content = <PortfolioPanel ticker={ticker} onViewChange={onViewChange} />;
       break;
     case "analytics":
       content = <LiveAnalyticsPanel ticker={comparisonSymbols?.[0] ?? ticker} comparisonSymbols={comparisonSymbols} initialView={comparisonSymbols?.length ? "comparison" : "heatmap"} onTickerSelect={openSecurity} />;

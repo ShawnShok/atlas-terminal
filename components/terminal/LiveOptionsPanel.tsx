@@ -110,11 +110,11 @@ function analyzeResearchStrategy(
   };
 }
 
-export function LiveOptionsPanel({ ticker }: { ticker: string }) {
-  return <TickerScopedOptionsPanel key={ticker} ticker={ticker} />;
+export function LiveOptionsPanel({ ticker, initialView = "chain" }: { ticker: string; initialView?: "chain" | "iv-surface" }) {
+  return <TickerScopedOptionsPanel key={`${ticker}:${initialView}`} ticker={ticker} initialView={initialView} />;
 }
 
-function TickerScopedOptionsPanel({ ticker }: { ticker: string }) {
+function TickerScopedOptionsPanel({ ticker, initialView }: { ticker: string; initialView: "chain" | "iv-surface" }) {
   const [nowIso] = useState(() => new Date().toISOString());
   const [filters, setFilters] = useState<OptionChainFilters>(EMPTY_FILTERS);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -274,6 +274,7 @@ function TickerScopedOptionsPanel({ ticker }: { ticker: string }) {
   const effectiveStatus = effectiveMessage ? { ...status, message: effectiveMessage } : status;
   return (
     <OptionsTerminal
+      initialPrimaryView={initialView}
       status={effectiveStatus}
       underlying={underlying}
       hasContracts={chain.data.contracts.length > 0}

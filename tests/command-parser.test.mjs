@@ -76,6 +76,7 @@ test("parses every supported ticker command", () => {
     ["TSLA CHART", "chart"],
     ["NVDA NEWS", "news"],
     ["AMD OPT", "options"],
+    ["AAPL IV", "options-surface"],
     ["META FIN", "financials"],
     ["PLTR EVENTS", "events"],
     ["NVDA OVERVIEW", "security"],
@@ -99,6 +100,8 @@ test("parses every supported exact page command", () => {
     ["EVENTS", "events"],
     ["SCAN", "scanner"],
     ["WATCH", "watchlist"],
+    ["PORTFOLIO", "portfolio"],
+    ["SCREENS", "saved-screens"],
     ["EARNINGS", "earnings"],
   ];
 

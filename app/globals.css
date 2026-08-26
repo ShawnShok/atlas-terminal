@@ -648,6 +648,45 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .system-workspace footer { min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 0 9px; color: #68788a; font-size: 7px; }
 .system-workspace footer svg { color: var(--blue); }
 
+.utility-workspace { min-height: 100%; padding: 9px; color: #8392a2; font-family: var(--mono); }
+.utility-workspace > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 9px 11px; border: 1px solid var(--line); background: #090d12; }
+.utility-workspace > header > div:first-child { display: grid; gap: 5px; }
+.utility-workspace > header span { color: var(--dim); font-size: 6px; letter-spacing: .12em; }
+.utility-workspace > header h2 { margin: 0; color: #cad4dd; font-size: 10px; letter-spacing: .04em; }
+.utility-workspace > header > svg { color: var(--blue); }
+.portfolio-empty-state, .saved-screens-empty { display: grid; justify-items: center; gap: 9px; padding: 34px 18px; border: 1px solid var(--line); border-top: 0; background: #0a0f15; text-align: center; }
+.portfolio-empty-state svg, .saved-screens-empty svg { color: var(--amber); }
+.portfolio-empty-state strong, .saved-screens-empty strong { color: #bac6d0; font-size: 9px; }
+.portfolio-empty-state p, .saved-screens-empty p { max-width: 620px; margin: 0; color: #647486; font: 10px/1.55 var(--sans); }
+.portfolio-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-top: 0; }
+.portfolio-metric-grid > div { min-height: 72px; display: grid; align-content: center; gap: 6px; padding: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.portfolio-metric-grid > div:nth-child(3n) { border-right: 0; }
+.portfolio-metric-grid span { color: #647384; font-size: 7px; }
+.portfolio-metric-grid strong { color: #8997a5; font-size: 10px; }
+.portfolio-metric-grid small { color: #465463; font-size: 6px; }
+.utility-actions, .saved-screens-toolbar { display: flex; align-items: center; gap: 7px; padding: 9px; border: 1px solid var(--line); border-top: 0; background: #090d12; }
+.utility-actions button, .saved-screens-toolbar button, .saved-screens-empty button { min-height: 29px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid #28557e; background: #0d1d2c; color: #74baff; cursor: pointer; font: 700 7px/1 var(--mono); }
+.utility-actions button:hover, .saved-screens-toolbar button:hover, .saved-screens-empty button:hover { background: #112b40; color: #b4dcff; }
+.saved-screens-toolbar p { flex: 1; margin: 0; color: #68788a; font: 9px/1.4 var(--sans); }
+.saved-screens-toolbar button:disabled, .saved-screen-delete:disabled { opacity: .45; cursor: not-allowed; }
+.utility-header-status { display: grid; justify-items: end; gap: 4px; }
+.utility-header-status strong { color: var(--blue); font-size: 16px; }
+.utility-message { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-top: 0; color: #8a98a6; font-size: 7px; }
+.utility-loading { min-height: 160px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); border-top: 0; color: #647486; font-size: 8px; }
+.saved-screen-list { border: 1px solid var(--line); border-top: 0; background: #090d12; }
+.saved-screen-list article { min-height: 72px; display: grid; grid-template-columns: minmax(0, 1fr) 34px; border-bottom: 1px solid var(--line); }
+.saved-screen-list article:last-child { border-bottom: 0; }
+.saved-screen-open { min-width: 0; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.saved-screen-open:hover { background: #0d1721; }
+.saved-screen-open > span { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #294967; color: var(--blue); }
+.saved-screen-open > div { min-width: 0; display: grid; gap: 4px; }
+.saved-screen-open strong { color: #b8c5d0; font-size: 9px; }
+.saved-screen-open p { overflow: hidden; margin: 0; color: #6d7c8b; font: 9px/1.3 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+.saved-screen-open small { color: #4f5e6d; font-size: 6px; }
+.saved-screen-open em { color: var(--blue); font-size: 7px; font-style: normal; }
+.saved-screen-delete { border: 0; border-left: 1px solid var(--line); background: transparent; color: #7b4f59; cursor: pointer; }
+.saved-screen-delete:hover { background: #241217; color: #e47d91; }
+
 @media (max-width: 1220px) {
   .terminal-topbar { grid-template-columns: 160px 158px minmax(320px, 1fr) 76px minmax(220px, 280px) 70px; }
   .market-strip-item:nth-child(4),
@@ -680,6 +719,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .alert-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .system-workspace > div { grid-template-columns: minmax(0, 1fr) minmax(90px, auto); gap: 8px; }
   .system-workspace > div small { display: none; }
+  .portfolio-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portfolio-metric-grid > div:nth-child(3n) { border-right: 1px solid var(--line); }
+  .portfolio-metric-grid > div:nth-child(2n) { border-right: 0; }
 
   .financial-header { align-items: stretch; padding-left: 9px; }
   .financial-header .freshness-strip { max-width: 58%; overflow: hidden; }
@@ -725,6 +767,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .system-workspace { margin: 6px; }
   .system-workspace > header { min-height: 48px; }
   .system-workspace > div { grid-template-columns: minmax(0, 1fr); gap: 4px; padding-block: 7px; }
+  .utility-workspace { padding: 6px; }
+  .portfolio-metric-grid { grid-template-columns: 1fr; }
+  .portfolio-metric-grid > div { border-right: 0 !important; }
+  .utility-actions, .saved-screens-toolbar { flex-wrap: wrap; }
+  .saved-screens-toolbar p { flex-basis: 100%; }
+  .saved-screen-open { grid-template-columns: 28px minmax(0, 1fr); }
+  .saved-screen-open em { grid-column: 2; }
 }
 
 @container workspace-panel (max-width: 360px) {

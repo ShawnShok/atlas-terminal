@@ -516,6 +516,7 @@ export function StrategyBuilder({
 }
 
 export interface OptionsTerminalProps {
+  readonly initialPrimaryView?: "chain" | "iv-surface";
   readonly status: ResearchDataStatus;
   readonly underlying: OptionsUnderlying;
   readonly hasContracts: boolean;
@@ -552,7 +553,7 @@ export interface OptionsTerminalProps {
 }
 
 export function OptionsTerminal(props: OptionsTerminalProps) {
-  const [primaryView, setPrimaryView] = useState<"chain" | "iv-surface">("chain");
+  const [primaryView, setPrimaryView] = useState<"chain" | "iv-surface">(props.initialPrimaryView ?? "chain");
   const viewId = useId();
   const strikes = props.rows.map((row) => row.strikePrice);
   const strikeRange = strikes.length
@@ -561,6 +562,10 @@ export function OptionsTerminal(props: OptionsTerminalProps) {
   return (
     <ResearchFrame title={`${props.underlying.symbol} OPTIONS`} eyebrow="OPTIONS DEVELOPER" status={props.status} className="research-options-terminal">
       <OptionsDataDisclosure mode={props.status.mode} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} quoteNote={props.quoteNote} asOf={props.chainAsOf} />
+      <div className="research-options-view-tabs" role="tablist" aria-label="Options data view">
+        <button type="button" role="tab" aria-selected={primaryView === "chain"} aria-controls={`${viewId}-chain`} className={primaryView === "chain" ? "is-active" : ""} onClick={() => setPrimaryView("chain")}><span>OPTION CHAIN</span><small>CALLS + PUTS</small></button>
+        <button type="button" role="tab" aria-selected={primaryView === "iv-surface"} aria-controls={`${viewId}-iv-surface`} className={primaryView === "iv-surface" ? "is-active" : ""} onClick={() => setPrimaryView("iv-surface")}><span>IV SURFACE</span><small>MULTI-EXPIRY</small></button>
+      </div>
       <OptionsHeader
         underlying={props.underlying}
         filters={props.filters}
@@ -572,10 +577,6 @@ export function OptionsTerminal(props: OptionsTerminalProps) {
         strikeRange={strikeRange}
         onFiltersChange={props.onFiltersChange}
       />
-      <div className="research-options-view-tabs" role="tablist" aria-label="Options data view">
-        <button type="button" role="tab" aria-selected={primaryView === "chain"} aria-controls={`${viewId}-chain`} className={primaryView === "chain" ? "is-active" : ""} onClick={() => setPrimaryView("chain")}>OPTION CHAIN</button>
-        <button type="button" role="tab" aria-selected={primaryView === "iv-surface"} aria-controls={`${viewId}-iv-surface`} className={primaryView === "iv-surface" ? "is-active" : ""} onClick={() => setPrimaryView("iv-surface")}>IV SURFACE</button>
-      </div>
       <div id={`${viewId}-chain`} role="tabpanel" hidden={primaryView !== "chain"}>
         <OptionChain rows={props.rows} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} selectedContractSymbol={props.selectedContract?.symbol ?? null} onContractSelect={props.onContractSelect} />
       </div>

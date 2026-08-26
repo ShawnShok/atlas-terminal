@@ -526,6 +526,8 @@ function copyName(name: string, existing: readonly string[]): string {
 
 export function LiveScannerPanel({ ticker, similarSeed, commandTarget, onTickerSelect, onResearchSelect }: LiveScannerPanelProps) {
   const watchlists = useWatchlists();
+  const watchlistLists = watchlists.lists;
+  const setSelectedWatchlistId = watchlists.setSelectedId;
   const enginePresets = useMemo(() => createScannerPresets(), []);
   const builtInPresets = useMemo(() => enginePresets.map(toResearchPreset), [enginePresets]);
   const savedScanners = useSavedScanners();
@@ -557,23 +559,31 @@ export function LiveScannerPanel({ ticker, similarSeed, commandTarget, onTickerS
 
   useEffect(() => {
     if (!commandTarget?.scannerPresetId) return;
-    const preset = enginePresets.find((candidate) => candidate.id === commandTarget.scannerPresetId);
+    const enginePreset = enginePresets.find((candidate) => candidate.id === commandTarget.scannerPresetId);
+    const savedPreset = savedScanners.records.find((candidate) => candidate.id === commandTarget.scannerPresetId);
+    if (!enginePreset && !savedPreset && savedScanners.persistenceState === "checking") return;
     const timer = window.setTimeout(() => {
-      if (!preset) {
+      const selectedRule = enginePreset?.rule ?? savedRules.get(commandTarget.scannerPresetId!);
+      if (!selectedRule) {
         setValidationMessage(`Scanner preset ${commandTarget.scannerPresetId} is unavailable.`);
         return;
       }
-      setActivePresetId(preset.id);
-      setConditions(ruleConditions(preset.rule, preset.id));
-      setLogic(preset.rule.kind === "any" ? "any" : "all");
-      setRuleTree(preset.rule);
+      setActivePresetId(commandTarget.scannerPresetId!);
+      setConditions(ruleConditions(selectedRule, commandTarget.scannerPresetId!));
+      setLogic(selectedRule.kind === "any" ? "any" : "all");
+      setRuleTree(selectedRule);
       setSelectedRuleGroupPath([]);
-      setScanName(preset.name);
-      setAppliedRule(preset.rule);
+      setScanName(enginePreset?.name ?? savedPreset?.name ?? "Saved screen");
+      setScoreWeights(savedPreset?.definition.scoreWeights ?? DEFAULT_RESEARCH_PRIORITY_WEIGHTS);
+      if (savedPreset?.definition.watchlistId
+        && watchlistLists.some((list) => list.id === savedPreset.definition.watchlistId)) {
+        setSelectedWatchlistId(savedPreset.definition.watchlistId);
+      }
+      setAppliedRule(selectedRule);
       setValidationMessage(null);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [commandTarget, enginePresets]);
+  }, [commandTarget, enginePresets, savedRules, savedScanners.persistenceState, savedScanners.records, setSelectedWatchlistId, watchlistLists]);
 
   const requestedSymbols = useMemo(() => {
     const symbols = watchlists.selected?.tickers.map((item) => item.symbol) ?? [];
