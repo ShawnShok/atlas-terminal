@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   calculateBreadthPercentages,
   formatCompactNumber,
@@ -275,6 +275,7 @@ export interface AnalyticsTerminalProps {
   readonly breadthHistory: readonly BreadthPoint[];
   readonly comparisonCompanies: readonly ComparisonCompany[];
   readonly comparisonMetrics: readonly ComparisonMetric[];
+  readonly comparisonControls?: ReactNode;
   readonly catalysts: readonly CatalystTimelineItem[];
   readonly newsPriceSeries: NewsPriceSeries | null;
   readonly patterns: readonly PatternCandidate[];
@@ -288,7 +289,12 @@ export function AnalyticsTerminal(props: AnalyticsTerminalProps) {
   let content;
   if (props.activeView === "heatmap") content = <MarketHeatmap cells={props.heatmapCells} onTickerSelect={props.onTickerSelect} />;
   else if (props.activeView === "breadth") content = <MarketBreadth snapshot={props.breadthSnapshot} history={props.breadthHistory} />;
-  else if (props.activeView === "comparison") content = <CompanyComparison companies={props.comparisonCompanies} metrics={props.comparisonMetrics} onTickerSelect={props.onTickerSelect} onRemoveCompany={props.onRemoveComparisonCompany} />;
+  else if (props.activeView === "comparison") content = (
+    <div className="research-comparison-view">
+      {props.comparisonControls}
+      <CompanyComparison companies={props.comparisonCompanies} metrics={props.comparisonMetrics} onTickerSelect={props.onTickerSelect} onRemoveCompany={props.onRemoveComparisonCompany} />
+    </div>
+  );
   else if (props.activeView === "catalysts") content = <CatalystTimeline items={props.catalysts} onTickerSelect={props.onTickerSelect} />;
   else if (props.activeView === "news-price") content = <NewsPriceTimeline series={props.newsPriceSeries} onMarkerSelect={props.onNewsMarkerSelect} />;
   else content = <PatternResearch candidates={props.patterns} onTickerSelect={props.onTickerSelect} />;

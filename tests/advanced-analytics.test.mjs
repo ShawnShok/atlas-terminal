@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { loadTypeScriptModule } from "./helpers/load-typescript-module.mjs";
+
+const [liveAnalyticsSource, analyticsTerminalSource, researchCssSource] = await Promise.all([
+  readFile(new URL("../components/terminal/LiveAnalyticsPanel.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../components/research/AnalyticsTerminal.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../components/research/research.css", import.meta.url), "utf8"),
+]);
 
 const breadth = await loadTypeScriptModule(
   new URL("../lib/analytics/breadth.ts", import.meta.url),
@@ -14,6 +21,19 @@ const patterns = await loadTypeScriptModule(
 const newsPrice = await loadTypeScriptModule(
   new URL("../lib/analytics/news-price.ts", import.meta.url),
 );
+
+test("comparison view exposes a provider-backed add-ticker control", () => {
+  assert.match(liveAnalyticsSource, /MAX_COMPARISON_SYMBOLS = 4/);
+  assert.match(liveAnalyticsSource, /\[ticker, "AMD", "AVGO"\]/);
+  assert.match(liveAnalyticsSource, /<TickerSearch/);
+  assert.match(liveAnalyticsSource, /"search",\s*\n\s*\{ q: debouncedQuery \}/);
+  assert.match(liveAnalyticsSource, /right\.symbol\.toUpperCase\(\) === normalizedQuery/);
+  assert.match(liveAnalyticsSource, /aria-label=\{full \? "Remove a ticker before adding another" : "Add ticker to comparison"\}/);
+  assert.match(liveAnalyticsSource, /setAdditionState/);
+  assert.match(analyticsTerminalSource, /comparisonControls\?: ReactNode/);
+  assert.match(analyticsTerminalSource, /research-comparison-view/);
+  assert.match(researchCssSource, /\.research-comparison-add/);
+});
 
 test("market breadth reports directional counts, SMA coverage, and yearly extremes", () => {
   const result = breadth.calculateMarketBreadth([

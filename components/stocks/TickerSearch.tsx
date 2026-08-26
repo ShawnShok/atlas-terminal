@@ -10,6 +10,7 @@ export interface TickerSearchProps {
   readonly isOpen: boolean;
   readonly activeIndex: number;
   readonly isLoading?: boolean;
+  readonly autoFocus?: boolean;
   readonly onQueryChange: (query: string) => void;
   readonly onActiveIndexChange: (index: number) => void;
   readonly onSelect: (result: TickerSearchResult) => void;
@@ -22,6 +23,7 @@ export function TickerSearch({
   isOpen,
   activeIndex,
   isLoading = false,
+  autoFocus = false,
   onQueryChange,
   onActiveIndexChange,
   onSelect,
@@ -34,7 +36,7 @@ export function TickerSearch({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       onOpenChange?.(true);
-      onActiveIndexChange(Math.min(results.length - 1, activeIndex + 1));
+      onActiveIndexChange(results.length === 0 ? 0 : Math.min(results.length - 1, activeIndex + 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       onActiveIndexChange(Math.max(0, activeIndex - 1));
@@ -58,6 +60,7 @@ export function TickerSearch({
         aria-activedescendant={isOpen && results[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         value={query}
         placeholder="SYMBOL OR COMPANY"
+        autoFocus={autoFocus}
         autoComplete="off"
         spellCheck={false}
         onFocus={() => onOpenChange?.(true)}

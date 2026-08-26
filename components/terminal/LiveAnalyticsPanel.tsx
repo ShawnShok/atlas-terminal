@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 
 import { AnalyticsTerminal } from "@/components/research";
+import { TickerSearch } from "@/components/stocks";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrivateTimelineNotes } from "@/hooks/usePrivateTimelineNotes";
 import { useResearchData } from "@/hooks/useResearchData";
 import {
@@ -29,6 +31,7 @@ import type {
   NewsArticle,
   SecurityResearchBundle,
   TerminalApiMeta,
+  TickerSearchResult,
 } from "@/types";
 
 import { DataState } from "./DataState";
@@ -47,12 +50,96 @@ interface ComparisonViewModel {
 }
 
 const EMPTY_COMPARISON_EXCLUSIONS: readonly string[] = [];
+const EMPTY_COMPARISON_ADDITIONS: readonly string[] = [];
+const MAX_COMPARISON_SYMBOLS = 4;
 
 export interface LiveAnalyticsPanelProps {
   readonly ticker: string;
   readonly onTickerSelect: (ticker: string) => void;
   readonly initialView?: AdvancedAnalyticsView;
   readonly comparisonSymbols?: readonly string[];
+}
+
+interface ComparisonTickerPickerProps {
+  readonly symbols: readonly string[];
+  readonly onAdd: (symbol: string) => void;
+}
+
+function ComparisonTickerPicker({ symbols, onAdd }: ComparisonTickerPickerProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const debouncedQuery = useDebouncedValue(query.trim(), 180);
+  const search = useResearchData<readonly TickerSearchResult[]>(
+    "search",
+    { q: debouncedQuery },
+    { enabled: pickerOpen && debouncedQuery.length >= 2 },
+  );
+  const normalizedQuery = query.trim().toUpperCase();
+  const results = normalizedQuery.length >= 2
+    ? (search.data ?? [])
+      .filter((item) => item.active && !symbols.includes(item.symbol.toUpperCase()))
+      .filter((item) => `${item.symbol} ${item.name}`.toUpperCase().includes(normalizedQuery))
+      .sort((left, right) => Number(right.symbol.toUpperCase() === normalizedQuery) - Number(left.symbol.toUpperCase() === normalizedQuery))
+      .slice(0, 10)
+    : [];
+  const full = symbols.length >= MAX_COMPARISON_SYMBOLS;
+
+  const close = () => {
+    setPickerOpen(false);
+    setResultsOpen(false);
+    setQuery("");
+    setActiveIndex(0);
+  };
+
+  return (
+    <div className="research-comparison-toolbar">
+      <div className="research-comparison-count">
+        <strong>COMPARE SET</strong>
+        <span>{symbols.length} / {MAX_COMPARISON_SYMBOLS} SECURITIES</span>
+      </div>
+      {pickerOpen && !full ? (
+        <div className="research-comparison-picker">
+          <TickerSearch
+            query={query}
+            results={results}
+            isOpen={resultsOpen && normalizedQuery.length >= 2}
+            activeIndex={Math.min(activeIndex, Math.max(results.length - 1, 0))}
+            isLoading={search.loading && normalizedQuery.length >= 2}
+            autoFocus
+            onQueryChange={(value) => {
+              const nextQuery = value.toUpperCase();
+              setQuery(nextQuery);
+              setActiveIndex(0);
+              setResultsOpen(nextQuery.trim().length >= 2);
+            }}
+            onActiveIndexChange={setActiveIndex}
+            onOpenChange={(open) => setResultsOpen(open && normalizedQuery.length >= 2)}
+            onSelect={(item) => {
+              onAdd(item.symbol);
+              close();
+            }}
+          />
+          <button type="button" className="research-comparison-close" onClick={close} aria-label="Close ticker picker">×</button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="research-comparison-add"
+          disabled={full}
+          aria-label={full ? "Remove a ticker before adding another" : "Add ticker to comparison"}
+          onClick={() => {
+            setPickerOpen(true);
+            setResultsOpen(false);
+          }}
+        >
+          <span aria-hidden="true">+</span>
+          {full ? "REMOVE ONE TO ADD" : "ADD TICKER"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function heatmapCells(bundle: AnalyticsUniverseBundle | null): readonly HeatmapCell[] {
@@ -310,6 +397,13 @@ export function LiveAnalyticsPanel({
   const excludedComparisonSymbols = exclusionState.scope === exclusionScope
     ? exclusionState.symbols
     : EMPTY_COMPARISON_EXCLUSIONS;
+  const [additionState, setAdditionState] = useState<{
+    readonly scope: string;
+    readonly symbols: readonly string[];
+  }>(() => ({ scope: exclusionScope, symbols: [] }));
+  const addedComparisonSymbols = additionState.scope === exclusionScope
+    ? additionState.symbols
+    : EMPTY_COMPARISON_ADDITIONS;
   const marketEnabled = activeView === "heatmap" || activeView === "breadth";
   const marketKind = activeView === "breadth" ? "breadth" : "heatmap";
   const market = useResearchData<AnalyticsUniverseBundle>(marketKind, {}, {
@@ -317,9 +411,13 @@ export function LiveAnalyticsPanel({
     refreshMs: 30_000,
     retainMs: 20_000,
   });
-  const comparisonSymbols = useMemo(() => [...new Set(requestedComparisonSymbols?.length ? requestedComparisonSymbols : [ticker, "AMD", "AVGO", "MSFT"])]
-    .filter((symbol) => !excludedComparisonSymbols.includes(symbol)).slice(0, 4),
-  [excludedComparisonSymbols, requestedComparisonSymbols, ticker]);
+  const comparisonSymbols = useMemo(() => [...new Set([
+    ...(requestedComparisonSymbols?.length ? requestedComparisonSymbols : [ticker, "AMD", "AVGO"]),
+    ...addedComparisonSymbols,
+  ].map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))]
+    .filter((symbol) => !excludedComparisonSymbols.includes(symbol))
+    .slice(0, MAX_COMPARISON_SYMBOLS),
+  [addedComparisonSymbols, excludedComparisonSymbols, requestedComparisonSymbols, ticker]);
   const comparisonParams = useMemo(() => ({ symbols: comparisonSymbols.join(","), range: "1Y" }), [comparisonSymbols]);
   const comparison = useResearchData<ComparisonResearchBundle>("compare", comparisonParams, {
     enabled: activeView === "comparison",
@@ -420,12 +518,37 @@ export function LiveAnalyticsPanel({
       breadthHistory={[]}
       comparisonCompanies={compared.companies}
       comparisonMetrics={compared.metrics}
+      comparisonControls={activeView === "comparison" ? (
+        <ComparisonTickerPicker
+          key={exclusionScope}
+          symbols={comparisonSymbols}
+          onAdd={(value) => {
+            const symbol = value.trim().toUpperCase();
+            if (!symbol || comparisonSymbols.includes(symbol) || comparisonSymbols.length >= MAX_COMPARISON_SYMBOLS) return;
+            setAdditionState((current) => {
+              const scopedSymbols = current.scope === exclusionScope ? current.symbols : [];
+              return {
+                scope: exclusionScope,
+                symbols: scopedSymbols.includes(symbol) ? scopedSymbols : [...scopedSymbols, symbol],
+              };
+            });
+            setExclusionState((current) => ({
+              scope: exclusionScope,
+              symbols: (current.scope === exclusionScope ? current.symbols : []).filter((item) => item !== symbol),
+            }));
+          }}
+        />
+      ) : undefined}
       catalysts={catalysts}
       newsPriceSeries={newsPrice}
       patterns={patterns}
       onViewChange={setActiveView}
       onTickerSelect={onTickerSelect}
       onRemoveComparisonCompany={comparisonSymbols.length > 1 ? (symbol) => {
+        setAdditionState((current) => ({
+          scope: exclusionScope,
+          symbols: (current.scope === exclusionScope ? current.symbols : []).filter((item) => item !== symbol),
+        }));
         setExclusionState((current) => {
           const scopedSymbols = current.scope === exclusionScope ? current.symbols : [];
           return {

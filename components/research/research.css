@@ -580,7 +580,20 @@
 .research-breadth-history > div[role="img"] i.positive { align-self: center; transform: translateY(-50%); }
 .research-breadth-history > div[role="img"] i.negative { align-self: center; transform: translateY(50%); }
 
-.research-comparison-table { min-width: 700px; }
+.research-comparison-view { min-width: 0; }
+.research-comparison-toolbar { position: sticky; top: 0; z-index: 5; min-height: 47px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; background: #090d12; }
+.research-comparison-count { display: grid; gap: 4px; margin-right: auto; }
+.research-comparison-count strong { color: #92a1af; font-size: 8px; letter-spacing: .08em; }
+.research-comparison-count span { color: var(--dim); font-size: 7px; }
+.research-comparison-add { min-height: 31px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px 0 7px; border: 1px solid #35516c; background: #0d1d2c; color: #75baff; cursor: pointer; font: 700 7px/1 var(--mono); letter-spacing: .07em; }
+.research-comparison-add > span { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid currentColor; color: var(--blue); font-size: 15px; font-weight: 400; line-height: 1; }
+.research-comparison-add:hover { border-color: var(--blue); background: #102941; }
+.research-comparison-add:disabled { cursor: not-allowed; opacity: .48; }
+.research-comparison-picker { width: min(480px, 72%); display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; gap: 5px; }
+.research-comparison-picker .stock-ticker-search { width: 100%; margin: 0; }
+.research-comparison-close { width: 32px; height: 35px; border: 1px solid var(--line-strong); background: #0c1219; color: #8190a0; cursor: pointer; font-size: 16px; line-height: 1; }
+.research-comparison-close:hover { border-color: var(--red); color: var(--red); }
+.research-comparison-table { min-width: 700px; border-top: 1px solid var(--line); }
 .research-comparison-table thead th { min-width: 145px; }
 .research-comparison-table thead th:first-child { min-width: 170px; }
 .research-comparison-table thead th .research-remove-button { float: right; }
@@ -804,6 +817,8 @@
   .research-source-status { min-width: 78px; grid-template-columns: 6px auto; padding-left: 8px; }
   .research-source-status time { display: none; }
   .research-status-message { max-height: 54px; overflow-y: auto; }
+  .research-comparison-toolbar { flex-wrap: wrap; }
+  .research-comparison-picker { flex: 1 0 100%; width: 100%; }
 
   .research-filter-grid label,
   .research-chain-quick-filters label,
