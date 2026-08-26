@@ -35,6 +35,18 @@ test("comparison view exposes a provider-backed add-ticker control", () => {
   assert.match(researchCssSource, /\.research-comparison-add/);
 });
 
+test("news-price timeline supports pointer, keyboard, marker, and table interaction", () => {
+  assert.match(analyticsTerminalSource, /tabIndex=\{0\}/);
+  assert.match(analyticsTerminalSource, /onPointerMove=/);
+  assert.match(analyticsTerminalSource, /event\.key === "ArrowLeft"/);
+  assert.match(analyticsTerminalSource, /aria-pressed=\{marker\.id === selectedMarkerId\}/);
+  assert.match(analyticsTerminalSource, /research-news-inspector/);
+  assert.match(analyticsTerminalSource, /PREVIOUS NEWS/);
+  assert.match(analyticsTerminalSource, /NEXT NEWS/);
+  assert.match(researchCssSource, /\.research-price-columns > div\.is-active/);
+  assert.match(researchCssSource, /\.research-news-markers tbody tr\.is-selected/);
+});
+
 test("market breadth reports directional counts, SMA coverage, and yearly extremes", () => {
   const result = breadth.calculateMarketBreadth([
     {

@@ -502,6 +502,7 @@ export function LiveAnalyticsPanel({
     reload = () => { timeline.reload(); chart.reload(); };
     statusMessage = [
       "Price Movement Following News uses daily bars and reports temporal association only; no causation is inferred.",
+      "Move across the chart or use the arrow keys, then select a highlighted news marker or headline for event details.",
       ...(timeline.data?.availability.notes ?? []),
     ].join(" ");
   }

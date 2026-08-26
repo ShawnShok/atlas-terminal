@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   calculateBreadthPercentages,
   formatCompactNumber,
@@ -207,24 +207,96 @@ export interface NewsPriceTimelineProps {
 }
 
 export function NewsPriceTimeline({ series, onMarkerSelect }: NewsPriceTimelineProps) {
+  const seriesScope = series
+    ? `${series.symbol}|${series.points.length}|${series.points.at(-1)?.timestamp ?? "empty"}`
+    : "empty";
+  const defaultMarker = series?.markers.at(-1) ?? null;
+  const [pointState, setPointState] = useState<{ readonly scope: string; readonly index: number }>(() => ({ scope: "empty", index: 0 }));
+  const [markerState, setMarkerState] = useState<{ readonly scope: string; readonly id: string | null }>(() => ({ scope: "empty", id: null }));
   if (!series || series.points.length === 0) return <EmptyResearchState title="NO NEWS / PRICE SERIES" detail="Price points and publication markers are required for this view." />;
+  const selectedMarkerId = markerState.scope === seriesScope ? markerState.id : defaultMarker?.id ?? null;
+  const selectedMarker = series.markers.find((marker) => marker.id === selectedMarkerId) ?? null;
+  const defaultPointIndex = Math.max(0, selectedMarker
+    ? series.points.findIndex((point) => point.timestamp === selectedMarker.timestamp)
+    : series.points.length - 1);
+  const activePointIndex = pointState.scope === seriesScope
+    ? Math.max(0, Math.min(series.points.length - 1, pointState.index))
+    : defaultPointIndex;
+  const activePoint = series.points[activePointIndex];
   const minimum = Math.min(...series.points.map((point) => point.price));
   const maximum = Math.max(...series.points.map((point) => point.price));
   const range = Math.max(maximum - minimum, 0.01);
+  const selectedMarkerIndex = selectedMarker
+    ? series.markers.findIndex((marker) => marker.id === selectedMarker.id)
+    : -1;
+
+  const selectPoint = (index: number) => {
+    const nextIndex = Math.max(0, Math.min(series.points.length - 1, index));
+    const marker = series.markers.find((candidate) => candidate.timestamp === series.points[nextIndex].timestamp) ?? null;
+    setPointState({ scope: seriesScope, index: nextIndex });
+    setMarkerState({ scope: seriesScope, id: marker?.id ?? null });
+  };
+  const selectMarker = (markerId: string) => {
+    const marker = series.markers.find((candidate) => candidate.id === markerId);
+    if (!marker) return;
+    const pointIndex = series.points.findIndex((point) => point.timestamp === marker.timestamp);
+    setMarkerState({ scope: seriesScope, id: marker.id });
+    if (pointIndex >= 0) setPointState({ scope: seriesScope, index: pointIndex });
+    onMarkerSelect?.(marker.id);
+  };
+  const selectPointerPoint = (clientX: number, element: HTMLDivElement) => {
+    const bounds = element.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const progress = Math.max(0, Math.min(0.999999, (clientX - bounds.left) / bounds.width));
+    selectPoint(Math.floor(progress * series.points.length));
+  };
+
   return (
     <div className="research-news-price">
-      <header><div><span>SECURITY</span><strong>{series.symbol}</strong></div><div><span>INTERVAL</span><strong>{series.interval}</strong></div><div><span>RANGE</span><strong>{formatCurrency(minimum)} — {formatCurrency(maximum)}</strong></div></header>
-      <div className="research-price-columns" role="img" aria-label={`${series.symbol} price timeline`}>
-        {series.points.map((point) => {
+      <header><div><span>SECURITY</span><strong>{series.symbol}</strong></div><div><span>INTERVAL</span><strong>{series.interval}</strong></div><div><span>RANGE</span><strong>{formatCurrency(minimum)} — {formatCurrency(maximum)}</strong></div><small>MOVE POINTER · USE ← / → · SELECT N</small></header>
+      <div
+        className="research-price-columns"
+        role="group"
+        tabIndex={0}
+        aria-label={`Interactive ${series.symbol} price timeline. Selected ${formatDateTime(activePoint.timestamp)}, close ${formatCurrency(activePoint.price)}. Use left and right arrow keys to explore sessions.`}
+        onPointerDown={(event) => selectPointerPoint(event.clientX, event.currentTarget)}
+        onPointerMove={(event) => {
+          if (event.pointerType === "touch" && event.buttons === 0) return;
+          selectPointerPoint(event.clientX, event.currentTarget);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") event.preventDefault();
+          if (event.key === "ArrowLeft") selectPoint(activePointIndex - 1);
+          if (event.key === "ArrowRight") selectPoint(activePointIndex + 1);
+          if (event.key === "Home") selectPoint(0);
+          if (event.key === "End") selectPoint(series.points.length - 1);
+        }}
+      >
+        {series.points.map((point, index) => {
           const height = 12 + ((point.price - minimum) / range) * 78;
           const marker = series.markers.find((candidate) => candidate.timestamp === point.timestamp);
           const style = { "--price-height": `${height}%` } as CSSProperties;
-          return <div key={point.timestamp} style={style} title={`${formatDateTime(point.timestamp)} ${formatCurrency(point.price)}`}><i />{marker ? <button type="button" onClick={() => onMarkerSelect?.(marker.id)} aria-label={`Open news marker: ${marker.title}`}>N</button> : null}</div>;
+          return <div key={point.timestamp} className={index === activePointIndex ? "is-active" : ""} style={style} title={`${formatDateTime(point.timestamp)} ${formatCurrency(point.price)}`}><i />{marker ? <button type="button" aria-pressed={marker.id === selectedMarkerId} onClick={(event) => { event.stopPropagation(); selectMarker(marker.id); }} aria-label={`Select news marker: ${marker.title}`}>N</button> : null}</div>;
         })}
       </div>
+      <section className="research-news-inspector" aria-label="Selected price session and news event">
+        <div><span>SELECTED SESSION</span><strong>{formatDateTime(activePoint.timestamp)}</strong></div>
+        <div><span>CLOSE</span><strong>{formatCurrency(activePoint.price)}</strong></div>
+        <div><span>VOLUME</span><strong>{activePoint.volume === null ? "—" : formatCompactNumber(activePoint.volume)}</strong></div>
+        <article>
+          <span>{selectedMarker ? selectedMarker.category.toUpperCase() : "NO NEWS MARKER"}</span>
+          <strong>{selectedMarker?.title ?? "Explore another session or choose a highlighted N marker."}</strong>
+          {selectedMarker ? <small>{formatCurrency(selectedMarker.priceAtPublication)} AT PUBLICATION · {formatPercent(selectedMarker.changeAfterPercent)} AFTER</small> : null}
+        </article>
+        <nav aria-label="News marker navigation">
+          <button type="button" disabled={selectedMarkerIndex <= 0} onClick={() => selectMarker(series.markers[selectedMarkerIndex - 1]?.id ?? "")}>← PREVIOUS NEWS</button>
+          <span>{selectedMarkerIndex >= 0 ? `${selectedMarkerIndex + 1} / ${series.markers.length}` : `${series.markers.length} NEWS EVENTS`}</span>
+          <button type="button" disabled={selectedMarkerIndex < 0 || selectedMarkerIndex >= series.markers.length - 1} onClick={() => selectMarker(series.markers[selectedMarkerIndex + 1]?.id ?? "")}>NEXT NEWS →</button>
+        </nav>
+      </section>
       <div className="research-table-wrap">
         <table className="research-table research-news-markers"><caption className="research-sr-only">News events plotted against price</caption><thead><tr><th>TIME</th><th>CATEGORY</th><th>HEADLINE</th><th>PRICE AT NEWS</th><th>MOVE AFTER</th></tr></thead><tbody>
-          {series.markers.map((marker) => <tr key={marker.id}><td>{formatDateTime(marker.timestamp)}</td><td>{marker.category}</td><td><button type="button" className="research-headline" onClick={() => onMarkerSelect?.(marker.id)}>{marker.title}</button></td><td>{formatCurrency(marker.priceAtPublication)}</td><td className={valueTone(marker.changeAfterPercent)}>{formatPercent(marker.changeAfterPercent)}</td></tr>)}
+          {series.markers.map((marker) => <tr key={marker.id} className={marker.id === selectedMarkerId ? "is-selected" : ""}><td>{formatDateTime(marker.timestamp)}</td><td>{marker.category}</td><td><button type="button" className="research-headline" aria-pressed={marker.id === selectedMarkerId} onClick={() => selectMarker(marker.id)}>{marker.title}</button></td><td>{formatCurrency(marker.priceAtPublication)}</td><td className={valueTone(marker.changeAfterPercent)}>{formatPercent(marker.changeAfterPercent)}</td></tr>)}
         </tbody></table>
       </div>
     </div>
