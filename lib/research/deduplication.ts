@@ -93,11 +93,11 @@ export function dedupeNewsArticles(
 
 /** Stable key shared by overlapping ticker, watchlist, and calendar event queries. */
 export function eventDedupeKey(event: CorporateEvent): string {
-  const url = normalizedUrl(event.eventUrl);
-  if (url) return `event:url:${url}`;
   if (event.id.trim()) {
     return `event:id:${normalizedText(event.source)}:${normalizedText(event.id)}`;
   }
+  const url = normalizedUrl(event.eventUrl);
+  if (url) return `event:url:${url}`;
   return [
     "event:fingerprint",
     normalizedText(event.symbol),

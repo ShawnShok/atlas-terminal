@@ -72,10 +72,11 @@ test("mock corporate events accept provider event aliases and reject unknown typ
   assert.deepEqual(unknown.events, []);
 });
 
-test("mock news honors published-after, category, keyword, ticker, and limit", async () => {
+test("mock news honors publication bounds, category, keyword, ticker, and limit", async () => {
   const service = new MockResearchService();
   const filtered = await service.getBenzingaNews({
     publishedAfter: "2026-08-15T14:36:00.000Z",
+    publishedBefore: "2026-08-15T14:40:00.000Z",
     category: "analyst",
     keyword: "fixture",
   });

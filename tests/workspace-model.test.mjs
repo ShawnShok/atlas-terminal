@@ -69,4 +69,11 @@ test("resize clamps panel ratios and ticker changes remain normalized", () => {
 
   const renamed = workspaceReducer(research, { type: "set-ticker", panelId: "research-security", ticker: "brk.b" });
   assert.equal(getPanels(renamed.root)[0].ticker, "BRK.B");
+
+  const longTicker = workspaceReducer(research, {
+    type: "set-ticker",
+    panelId: "research-security",
+    ticker: "abcdefghijklmnoz",
+  });
+  assert.equal(getPanels(longTicker.root)[0].ticker, "ABCDEFGHIJKLMNO");
 });

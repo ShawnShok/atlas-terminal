@@ -1,15 +1,16 @@
 "use client";
 
 import { ArrowUpRight } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
-import type { PanelView } from "@/lib/workspace/model";
+import type { PanelView, WorkspaceCommandTarget } from "@/lib/workspace/model";
 
 import { LiveAnalyticsPanel } from "./LiveAnalyticsPanel";
 import { LiveEventsPanel } from "./LiveEventsPanel";
 import { LiveFinancialsPanel } from "./LiveFinancialsPanel";
 import { LiveNewsPanel } from "./LiveNewsPanel";
 import { LiveOptionsPanel } from "./LiveOptionsPanel";
-import { LiveScannerPanel } from "./LiveScannerPanel";
+import { LiveScannerPanel, type ScannerNavigationContext, type ScannerSimilarSeed } from "./LiveScannerPanel";
 import {
   LiveDashboardPanel,
   LiveMarketPanel,
@@ -18,6 +19,11 @@ import {
   LiveWatchlistPanel,
 } from "./LiveStockPanels";
 import { PersonalResearchPanel } from "./PersonalResearchPanel";
+import {
+  TickerResearchNav,
+  TICKER_RESEARCH_VIEWS,
+  type WatchlistResearchTarget,
+} from "@/components/stocks";
 
 interface PanelContentProps {
   readonly view: PanelView;
@@ -25,6 +31,7 @@ interface PanelContentProps {
   readonly activity: readonly string[];
   readonly recentTickers: readonly string[];
   readonly comparisonSymbols?: readonly string[];
+  readonly commandTarget?: WorkspaceCommandTarget | null;
   readonly onTickerChange: (ticker: string) => void;
   readonly onViewChange: (view: PanelView) => void;
 }
@@ -64,54 +71,145 @@ export function PanelContent({
   activity,
   recentTickers,
   comparisonSymbols,
+  commandTarget,
   onTickerChange,
   onViewChange,
 }: PanelContentProps) {
+  const [scannerContext, setScannerContext] = useState<ScannerNavigationContext | null>(null);
+  const [similarSeed, setSimilarSeed] = useState<ScannerSimilarSeed | null>(null);
+  const [watchlistResearch, setWatchlistResearch] = useState<{
+    readonly ticker: string;
+    readonly target: WatchlistResearchTarget;
+  } | null>(null);
   const openSecurity = (symbol: string) => {
     onTickerChange(symbol);
     onViewChange("security");
   };
 
+  const findSimilar = (symbol: string) => {
+    setScannerContext(null);
+    setSimilarSeed((current) => ({ ticker: symbol, sequence: (current?.sequence ?? 0) + 1 }));
+    onTickerChange(symbol);
+    onViewChange("scanner");
+  };
+
+  const openWatchlistResearch = (symbol: string, target: WatchlistResearchTarget) => {
+    setScannerContext(null);
+    setWatchlistResearch({ ticker: symbol, target });
+    onTickerChange(symbol);
+    onViewChange(target.view);
+  };
+
+  const activeWatchlistResearch = watchlistResearch?.ticker === ticker
+    ? watchlistResearch.target
+    : null;
+
+  let content: ReactNode;
   switch (view) {
     case "dashboard":
-      return <LiveDashboardPanel recentTickers={recentTickers} onTickerSelect={openSecurity} />;
+      content = <LiveDashboardPanel recentTickers={recentTickers} onTickerSelect={openSecurity} />;
+      break;
     case "security":
-      return <LiveStockPanel ticker={ticker} view="overview" onTickerSelect={onTickerChange} onViewChange={(next) => onViewChange(next === "chart" ? "chart" : "security")} />;
+      content = <LiveStockPanel ticker={ticker} view="overview" onTickerSelect={onTickerChange} onFindSimilar={findSimilar} />;
+      break;
     case "chart":
-      return <LiveStockPanel ticker={ticker} view="chart" onTickerSelect={onTickerChange} onViewChange={(next) => onViewChange(next === "chart" ? "chart" : "security")} />;
+      content = <LiveStockPanel ticker={ticker} view="chart" onTickerSelect={onTickerChange} />;
+      break;
     case "financials":
-      return <LiveFinancialsPanel ticker={ticker} />;
+      content = <LiveFinancialsPanel ticker={ticker} />;
+      break;
     case "market":
-      return <LiveMarketPanel onTickerSelect={openSecurity} />;
+      content = <LiveMarketPanel onTickerSelect={openSecurity} />;
+      break;
     case "movers":
-      return <LiveMoversPanel onTickerSelect={openSecurity} />;
+      content = <LiveMoversPanel onTickerSelect={openSecurity} />;
+      break;
     case "watchlist":
-      return <LiveWatchlistPanel onTickerSelect={openSecurity} />;
+      content = <LiveWatchlistPanel commandTarget={commandTarget} onTickerSelect={openSecurity} onResearchSelect={openWatchlistResearch} />;
+      break;
     case "news":
-      return <LiveNewsPanel ticker={ticker} onTickerSelect={openSecurity} />;
+      content = <LiveNewsPanel ticker={ticker} initialArticleId={activeWatchlistResearch?.view === "news" ? activeWatchlistResearch.itemId : null} onTickerSelect={openSecurity} />;
+      break;
     case "events":
-      return <LiveEventsPanel ticker={ticker} onTickerSelect={openSecurity} />;
+      content = <LiveEventsPanel
+        ticker={ticker}
+        initialEventId={activeWatchlistResearch?.view === "events" ? activeWatchlistResearch.itemId : null}
+        initialEventStartsAt={activeWatchlistResearch?.view === "events" ? activeWatchlistResearch.startsAt : null}
+        onTickerSelect={openSecurity}
+      />;
+      break;
     case "earnings":
-      return <LiveEventsPanel ticker={ticker} earningsOnly onTickerSelect={openSecurity} />;
+      content = <LiveEventsPanel ticker={ticker} earningsOnly onTickerSelect={openSecurity} />;
+      break;
     case "options":
-      return <LiveOptionsPanel ticker={ticker} />;
+      content = <LiveOptionsPanel ticker={ticker} />;
+      break;
     case "scanner":
-      return <LiveScannerPanel ticker={ticker} onTickerSelect={openSecurity} />;
+      content = <LiveScannerPanel
+        ticker={ticker}
+        similarSeed={similarSeed}
+        commandTarget={commandTarget}
+        onTickerSelect={(symbol, context) => {
+          setScannerContext(context);
+          openSecurity(symbol);
+        }}
+        onResearchSelect={(symbol, nextView) => {
+          setWatchlistResearch(null);
+          onTickerChange(symbol);
+          onViewChange(nextView);
+        }}
+      />;
+      break;
     case "analytics":
-      return <LiveAnalyticsPanel ticker={comparisonSymbols?.[0] ?? ticker} comparisonSymbols={comparisonSymbols} initialView={comparisonSymbols?.length ? "comparison" : "heatmap"} onTickerSelect={openSecurity} />;
+      content = <LiveAnalyticsPanel ticker={comparisonSymbols?.[0] ?? ticker} comparisonSymbols={comparisonSymbols} initialView={comparisonSymbols?.length ? "comparison" : "heatmap"} onTickerSelect={openSecurity} />;
+      break;
+    case "timeline":
+      content = <LiveAnalyticsPanel ticker={ticker} initialView="catalysts" onTickerSelect={openSecurity} />;
+      break;
     case "alerts":
-      return <PersonalResearchPanel key={`alerts:${ticker}`} view="alerts" ticker={ticker} />;
+      content = <PersonalResearchPanel key={`alerts:${ticker}`} view="alerts" ticker={ticker} />;
+      break;
     case "notes":
-      return <PersonalResearchPanel key={`notes:${ticker}`} view="notes" ticker={ticker} />;
+      content = <PersonalResearchPanel key={`notes:${ticker}`} view="notes" ticker={ticker} />;
+      break;
     case "settings":
-      return <PersonalResearchPanel view="settings" ticker={ticker} />;
+      content = <PersonalResearchPanel view="settings" ticker={ticker} />;
+      break;
     case "system":
-      return <PersonalResearchPanel view="system" ticker={ticker} />;
+      content = <PersonalResearchPanel view="system" ticker={ticker} />;
+      break;
     case "activity":
-      return <Activity activity={activity} />;
+      content = <Activity activity={activity} />;
+      break;
     case "shortcuts":
-      return <Shortcuts />;
+      content = <Shortcuts />;
+      break;
     default:
-      return <LiveStockPanel ticker={ticker} view="overview" onTickerSelect={onTickerChange} onViewChange={(next) => onViewChange(next === "chart" ? "chart" : "security")} />;
+      content = <LiveStockPanel ticker={ticker} view="overview" onTickerSelect={onTickerChange} />;
   }
+
+  if (!TICKER_RESEARCH_VIEWS.has(view)) return content;
+  return (
+    <div className="ticker-research-surface">
+      <TickerResearchNav ticker={ticker} activeView={view} onViewChange={onViewChange} />
+      <div className="ticker-research-content">
+        <div className="ticker-research-stack">
+          {scannerContext?.ticker === ticker ? (
+            <aside className="ticker-scanner-context" aria-label="Preserved scanner qualification context">
+              <div>
+                <span>OPENED FROM {scannerContext.scanName.toUpperCase()}</span>
+                <strong>{scannerContext.researchPriority === null ? "RESEARCH PRIORITY UNAVAILABLE" : `RESEARCH PRIORITY ${scannerContext.researchPriority}/100`}</strong>
+              </div>
+              <details>
+                <summary>{scannerContext.reasons.length} QUALIFICATION REASONS</summary>
+                <ul>{scannerContext.reasons.map((reason, index) => <li key={`${ticker}-scanner-reason-${index}`}>{reason}</li>)}</ul>
+              </details>
+              <button type="button" onClick={() => onViewChange("scanner")}>RETURN TO SCANNER</button>
+            </aside>
+          ) : null}
+          <div className="ticker-research-panel-content">{content}</div>
+        </div>
+      </div>
+    </div>
+  );
 }

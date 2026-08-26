@@ -2,11 +2,13 @@ import type { ScannerRule } from "./engine";
 
 export type ScannerPresetId =
   | "momentum"
-  | "breakout"
+  | "catalyst-momentum"
+  | "breakout-watch"
   | "earnings-soon"
   | "news-movers"
   | "high-relative-volume"
-  | "unusual-options"
+  | "unusual-options-research"
+  | "watchlist-catalyst-feed"
   | "near-52-week-high"
   | "gap-up"
   | "gap-down";
@@ -25,6 +27,7 @@ export interface ScannerPresetConfiguration {
   readonly newsWithinMinutes?: number;
   readonly newsMovePercent?: number;
   readonly optionVolumeToOpenInterest?: number;
+  readonly breakoutNearPercent?: number;
   readonly nearHighPercent?: number;
   readonly gapPercent?: number;
 }
@@ -36,8 +39,12 @@ export function createScannerPresets(
   const momentumChange = configuration.momentumChangePercent ?? 2;
   const earningsDays = configuration.earningsWithinDays ?? 14;
   const newsMinutes = configuration.newsWithinMinutes ?? 1_440;
+  const newsWindow = configuration.newsWithinMinutes === undefined
+    ? { withinMinutes: newsMinutes, calendarDay: "today" as const }
+    : { withinMinutes: newsMinutes };
   const newsMove = configuration.newsMovePercent ?? 3;
   const optionRatio = configuration.optionVolumeToOpenInterest ?? 2;
+  const breakoutNear = configuration.breakoutNearPercent ?? 1;
   const nearHigh = configuration.nearHighPercent ?? 5;
   const gap = configuration.gapPercent ?? 4;
 
@@ -52,42 +59,79 @@ export function createScannerPresets(
       ] },
     },
     {
-      id: "breakout",
-      name: "Breakout",
-      description: "Price at or above the recent 20-session high with elevated volume.",
+      id: "catalyst-momentum",
+      name: "Catalyst Momentum",
+      description: "An upcoming catalyst with positive movement and elevated relative volume.",
       rule: { kind: "all", rules: [
-        { kind: "price-relation", reference: "recentHigh20", relation: "at-or-above" },
+        { kind: "catalyst-window", withinDays: 14 },
+        { kind: "numeric", field: "dailyChangePercent", operator: "gt", value: 0 },
         { kind: "numeric", field: "relativeVolume", operator: "gte", value: Math.max(1.5, relativeVolume) },
+      ] },
+    },
+    {
+      id: "breakout-watch",
+      name: "Breakout Watch",
+      description: "Price near or above the recent 20-session high with elevated daily or intraday relative volume.",
+      rule: { kind: "all", rules: [
+        { kind: "any", rules: [
+          { kind: "price-relation", reference: "recentHigh20", relation: "at-or-above" },
+          { kind: "numeric", field: "percentBelowRecentHigh20", operator: "lte", value: breakoutNear },
+        ] },
+        { kind: "any", rules: [
+          { kind: "numeric", field: "dailyRelativeVolume", operator: "gte", value: Math.max(1.5, relativeVolume) },
+          { kind: "numeric", field: "intradayRelativeVolume", operator: "gte", value: Math.max(1.5, relativeVolume) },
+        ] },
       ] },
     },
     {
       id: "earnings-soon",
       name: "Earnings Soon",
-      description: "A reported earnings catalyst falls within the configured window.",
-      rule: { kind: "catalyst-window", withinDays: earningsDays, catalystTypes: ["earnings", "earnings-release"] },
+      description: "A confirmed reported earnings catalyst falls within the configured window.",
+      rule: {
+        kind: "catalyst-window",
+        withinDays: earningsDays,
+        catalystTypes: ["earnings", "earnings-release", "earnings-call"],
+        statuses: ["confirmed"],
+      },
     },
     {
       id: "news-movers",
       name: "News Movers",
-      description: "A material absolute price move with a recent news timestamp; no causation is inferred.",
+      description: "Recent news, a material absolute price move, and elevated relative volume; no causation is inferred.",
       rule: { kind: "all", rules: [
         { kind: "numeric", field: "dailyChangePercent", operator: "absolute-gte", value: newsMove },
-        { kind: "recent-news", withinMinutes: newsMinutes },
+        { kind: "recent-news", ...newsWindow },
+        { kind: "any", rules: [
+          { kind: "numeric", field: "dailyRelativeVolume", operator: "gte", value: Math.max(1.5, relativeVolume) },
+          { kind: "numeric", field: "intradayRelativeVolume", operator: "gte", value: Math.max(1.5, relativeVolume) },
+        ] },
       ] },
     },
     {
       id: "high-relative-volume",
       name: "High Relative Volume",
-      description: "Relative volume is at or above the configured threshold.",
-      rule: { kind: "numeric", field: "relativeVolume", operator: "gte", value: relativeVolume },
+      description: "Reported daily or time-adjusted intraday relative volume is at or above the configured threshold.",
+      rule: { kind: "any", rules: [
+        { kind: "numeric", field: "dailyRelativeVolume", operator: "gte", value: relativeVolume },
+        { kind: "numeric", field: "intradayRelativeVolume", operator: "gte", value: relativeVolume },
+      ] },
     },
     {
-      id: "unusual-options",
-      name: "Unusual Options",
+      id: "unusual-options-research",
+      name: "Unusual Options Research",
       description: "Elevated option volume relative to open interest; direction and intent are unknown.",
-      rule: { kind: "all", rules: [
+      rule: { kind: "any", rules: [
         { kind: "numeric", field: "optionVolume", operator: "gte", value: 100 },
         { kind: "numeric", field: "optionVolumeToOpenInterest", operator: "gte", value: optionRatio },
+      ] },
+    },
+    {
+      id: "watchlist-catalyst-feed",
+      name: "Watchlist Catalyst Feed",
+      description: "Recent news or an upcoming event inside the selected watchlist universe.",
+      rule: { kind: "any", rules: [
+        { kind: "recent-news", ...newsWindow },
+        { kind: "catalyst-window", withinDays: 14 },
       ] },
     },
     {

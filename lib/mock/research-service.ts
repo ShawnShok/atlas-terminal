@@ -286,9 +286,12 @@ function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle
         strikePrice: strike,
         exerciseStyle: "american",
         sharesPerContract: 100,
+        sharesPerContractReported: true,
         lastPrice: last,
+        lastPriceSource: "day-close",
         bidPrice: round(last - 0.08),
         askPrice: round(last + 0.08),
+        quoteAvailability: "available",
         volume: 100 + ((seed(symbol) + offset * 117 + (type === "call" ? 31 : 61)) % 7_500),
         openInterest: 400 + ((seed(symbol) + offset * 293 + (type === "call" ? 79 : 101)) % 24_000),
         impliedVolatility: round(0.28 + Math.abs(offset) * 0.012, 4),
@@ -307,7 +310,18 @@ function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle
       });
     }
   }
-  return { underlyingSymbol: symbol, underlyingPrice, expirations, selectedExpiration, contracts, asOf: MOCK_AS_OF, quality: "indicative" };
+  return {
+    underlyingSymbol: symbol,
+    underlyingPrice,
+    expirations,
+    selectedExpiration,
+    contracts,
+    contractsComplete: true,
+    asOf: MOCK_AS_OF,
+    quality: "indicative",
+    quoteAvailability: "available",
+    quoteNote: "Synthetic mock bid/ask snapshots are indicative and not executable.",
+  };
 }
 
 export class MockResearchService implements ResearchService {
@@ -347,6 +361,7 @@ export class MockResearchService implements ResearchService {
   async getBenzingaNews(input: {
     ticker?: string;
     publishedAfter?: string;
+    publishedBefore?: string;
     category?: string;
     keyword?: string;
     limit?: number;
@@ -355,10 +370,12 @@ export class MockResearchService implements ResearchService {
     const keyword = input.keyword?.trim().toLowerCase();
     const category = input.category?.trim().toLowerCase() as NewsCategory | undefined;
     const publishedAfter = input.publishedAfter ? Date.parse(input.publishedAfter) : null;
+    const publishedBefore = input.publishedBefore ? Date.parse(input.publishedBefore) : null;
     const requestedLimit = Number.isFinite(input.limit) ? Math.trunc(input.limit ?? 120) : 120;
     const limit = Math.min(500, Math.max(1, requestedLimit));
     const articles = mockNews(ticker).filter((article) => {
       if (publishedAfter !== null && !Number.isNaN(publishedAfter) && Date.parse(article.publishedAt) < publishedAfter) return false;
+      if (publishedBefore !== null && !Number.isNaN(publishedBefore) && Date.parse(article.publishedAt) > publishedBefore) return false;
       if (category && !article.categories.includes(category)) return false;
       if (!keyword) return true;
       return [article.title, article.summary ?? "", article.body ?? "", ...article.keywords]

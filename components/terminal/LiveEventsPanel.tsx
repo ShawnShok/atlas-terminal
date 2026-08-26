@@ -4,93 +4,112 @@ import { useEffect, useMemo, useState } from "react";
 
 import { EventsTerminal } from "@/components/research";
 import { useResearchData } from "@/hooks/useResearchData";
+import { useWatchlists } from "@/hooks/useWatchlists";
+import { buildEventAlertRequest, type EventAlertDraft } from "@/lib/alerts";
 import {
-  formatCountdown,
+  eventHorizonRange,
+  formatMarketEventCountdown,
+  groupEventsByMarketDay,
+  marketCalendarDaysUntil,
+  marketDateKey,
   marketCapBand,
   type EarningsEvent,
-  type EventCalendarDay,
   type EventCountdown,
   type EventFiltersValue,
 } from "@/lib/research";
-import type { CorporateEvent, EventsResearchBundle, SecurityClassification } from "@/types";
+import type { EventsResearchBundle, SecurityClassification } from "@/types";
 
 import { DataState } from "./DataState";
 import { researchStatus } from "./research-status";
 
-const CORE_WATCHLIST = new Set(["NVDA", "AAPL", "MSFT", "AMD", "AVGO", "META", "PLTR", "TSLA"]);
 const EMPTY_CLASSIFICATIONS: readonly SecurityClassification[] = [];
 
-function toDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+interface PersonalAlertResponse<T> {
+  readonly ok: boolean;
+  readonly data?: T;
+  readonly error?: { readonly message: string };
 }
 
-function horizonDates(horizon: EventFiltersValue["horizon"], nowIso: string): { from: string; to: string } {
-  const now = new Date(nowIso);
-  const start = new Date(now);
-  const end = new Date(now);
-  if (horizon === "tomorrow") {
-    start.setUTCDate(start.getUTCDate() + 1);
-    end.setUTCDate(end.getUTCDate() + 1);
-  } else if (horizon === "this-week") end.setUTCDate(end.getUTCDate() + 7);
-  else if (horizon === "next-week") {
-    start.setUTCDate(start.getUTCDate() + 7);
-    end.setUTCDate(end.getUTCDate() + 14);
-  } else if (horizon === "this-month") end.setUTCDate(end.getUTCDate() + 31);
-  return { from: toDate(start), to: toDate(end) };
-}
-
-function groupDays(events: readonly CorporateEvent[], nowIso: string): readonly EventCalendarDay[] {
-  const groups = new Map<string, CorporateEvent[]>();
-  for (const event of events) {
-    const date = event.startsAt.slice(0, 10);
-    groups.set(date, [...(groups.get(date) ?? []), event]);
+async function saveEventAlert(draft: EventAlertDraft): Promise<void> {
+  const request = buildEventAlertRequest(draft);
+  const response = await fetch("/api/personal?resource=alerts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const payload = await response.json() as PersonalAlertResponse<unknown>;
+  if (!payload.ok || payload.data === undefined) {
+    throw new Error(payload.error?.message ?? "The event alert could not be saved.");
   }
-  const today = nowIso.slice(0, 10);
-  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, items]) => ({
-    date,
-    label: new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`)).toUpperCase(),
-    isToday: date === today,
-    events: items,
-  }));
 }
 
-function LiveEventsPanelInner({ ticker, earningsOnly = false, onTickerSelect }: { ticker: string; earningsOnly?: boolean; onTickerSelect: (ticker: string) => void }) {
+function LiveEventsPanelInner({
+  ticker,
+  earningsOnly = false,
+  initialEventId = null,
+  initialEventStartsAt = null,
+  onTickerSelect,
+}: {
+  ticker: string;
+  earningsOnly?: boolean;
+  initialEventId?: string | null;
+  initialEventStartsAt?: string | null;
+  onTickerSelect: (ticker: string) => void;
+}) {
+  const watchlists = useWatchlists();
+  const initialEventDate = initialEventStartsAt ? marketDateKey(initialEventStartsAt) : null;
   const [filters, setFilters] = useState<EventFiltersValue>({
-    horizon: earningsOnly ? "this-week" : "this-month",
+    horizon: initialEventDate ? "custom" : earningsOnly ? "this-week" : "this-month",
     watchlistOnly: false,
     ticker,
     type: earningsOnly ? "earnings-release" : "all",
+    status: "all",
+    confirmedOnly: false,
+    earningsOnly,
     marketCap: "all",
     sector: "",
-    date: "",
+    customFrom: initialEventDate ?? marketDateKey(new Date().toISOString()) ?? new Date().toISOString().slice(0, 10),
+    customTo: initialEventDate ?? eventHorizonRange("this-month", new Date().toISOString())?.to ?? new Date().toISOString().slice(0, 10),
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialEventId);
   const [nowIso, setNowIso] = useState(() => new Date().toISOString());
+  const [alertSaveState, setAlertSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNowIso(new Date().toISOString()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const dates = horizonDates(filters.horizon, nowIso);
+  const dates = eventHorizonRange(filters.horizon, nowIso, filters.customFrom, filters.customTo)
+    ?? eventHorizonRange("today", nowIso)!;
   const requestedTicker = filters.ticker.trim().toUpperCase();
-  const from = filters.date || dates.from;
-  const to = filters.date || dates.to;
+  const from = dates.from;
+  const to = dates.to;
+  const selectedWatchlistSymbols = useMemo(() => new Set(
+    (watchlists.selected?.tickers ?? []).map((item) => item.symbol.trim().toUpperCase()),
+  ), [watchlists.selected]);
+  const queryAllSymbols = filters.watchlistOnly || !requestedTicker;
+  const researchKind = earningsOnly || filters.earningsOnly ? "earnings" : "events";
   const params = useMemo(() => ({
-    ticker: requestedTicker || ticker,
-    all: filters.watchlistOnly || !requestedTicker,
+    ticker: queryAllSymbols ? undefined : requestedTicker,
+    all: queryAllSymbols,
     from,
     to,
     type: filters.type === "all" ? undefined : filters.type,
-  }), [filters.type, filters.watchlistOnly, from, requestedTicker, ticker, to]);
-  const result = useResearchData<EventsResearchBundle>(earningsOnly ? "earnings" : "events", params, { refreshMs: 15 * 60_000, retainMs: 5 * 60_000 });
+  }), [filters.type, from, queryAllSymbols, requestedTicker, to]);
+  const result = useResearchData<EventsResearchBundle>(researchKind, params, { refreshMs: 15 * 60_000, retainMs: 5 * 60_000 });
   const candidateEvents = useMemo(() => (result.data?.events ?? []).filter((event) => {
     const symbol = event.symbol.trim().toUpperCase();
-    const eventDate = event.startsAt.slice(0, 10);
+    const eventDate = marketDateKey(event.startsAt);
     if (!filters.watchlistOnly && requestedTicker && symbol !== requestedTicker) return false;
-    if (filters.watchlistOnly && !CORE_WATCHLIST.has(symbol)) return false;
-    if (eventDate < from || eventDate > to) return false;
+    if (filters.watchlistOnly && !selectedWatchlistSymbols.has(symbol)) return false;
+    if (!eventDate || eventDate < from || eventDate > to) return false;
     if (filters.type !== "all" && event.type !== filters.type) return false;
+    if ((earningsOnly || filters.earningsOnly) && event.type !== "earnings-release" && event.type !== "earnings-call") return false;
+    if (filters.confirmedOnly && event.status !== "confirmed") return false;
+    if (filters.status !== "all" && event.status !== filters.status) return false;
     return true;
-  }), [filters.type, filters.watchlistOnly, from, requestedTicker, result.data?.events, to]);
+  }), [earningsOnly, filters.confirmedOnly, filters.earningsOnly, filters.status, filters.type, filters.watchlistOnly, from, requestedTicker, result.data?.events, selectedWatchlistSymbols, to]);
   const allEventSymbols = useMemo(() => [...new Set(candidateEvents
     .map((event) => event.symbol.trim().toUpperCase())
     .filter(Boolean))].sort(), [candidateEvents]);
@@ -129,11 +148,30 @@ function LiveEventsPanelInner({ ticker, earningsOnly = false, onTickerSelect }: 
     return true;
   }), [candidateEvents, classificationBySymbol, filters.marketCap, filters.sector]);
   const selected = events.find((event) => event.id === selectedId) ?? events[0] ?? null;
-  const countdowns: EventCountdown[] = events.slice(0, 8).map((event) => {
-    const days = (Date.parse(event.startsAt) - Date.parse(nowIso)) / 86_400_000;
-    return { eventId: event.id, symbol: event.symbol, label: formatCountdown(event.startsAt, nowIso), startsAt: event.startsAt, urgency: days <= 1 ? "imminent" : days <= 3 ? "soon" : "normal" };
-  });
-  const earnings: EarningsEvent[] = events.filter((event) => event.type === "earnings-release" || event.type === "earnings-call").map((event) => ({
+  const countdowns: EventCountdown[] = events
+    .filter((event) => event.status !== "canceled" && event.status !== "completed")
+    .flatMap((event): EventCountdown[] => {
+      const days = marketCalendarDaysUntil(event.startsAt, nowIso);
+      if (days === null || days < 0) return [];
+      const earningsLabel = event.type === "earnings-release" || event.type === "earnings-call" ? "EARNINGS · " : "";
+      return [{
+        eventId: event.id,
+        symbol: event.symbol,
+        label: `${earningsLabel}${formatMarketEventCountdown(event.startsAt, nowIso)}`,
+        startsAt: event.startsAt,
+        allDay: event.allDay,
+        urgency: days <= 1 ? "imminent" : days <= 3 ? "soon" : "normal",
+      }];
+    })
+    .slice(0, 8);
+  const earnings: EarningsEvent[] = events.filter((event) => {
+    const days = marketCalendarDaysUntil(event.startsAt, nowIso);
+    return (event.type === "earnings-release" || event.type === "earnings-call")
+      && event.status !== "canceled"
+      && event.status !== "completed"
+      && days !== null
+      && days >= 0;
+  }).map((event) => ({
     event,
     fiscalPeriod: null,
     timing: "unknown",
@@ -142,9 +180,44 @@ function LiveEventsPanelInner({ ticker, earningsOnly = false, onTickerSelect }: 
     previousEps: null,
   }));
 
+  const createAlert = async (draft: EventAlertDraft) => {
+    setAlertSaveState("saving");
+    setAlertMessage(null);
+    try {
+      let notificationPermission: EventAlertDraft["notificationPermission"] = "not-requested";
+      if (draft.browserNotification) {
+        if (typeof Notification === "undefined") {
+          notificationPermission = "unsupported";
+        } else {
+          notificationPermission = Notification.permission;
+          if (notificationPermission === "default") {
+            notificationPermission = await Notification.requestPermission();
+          }
+        }
+      }
+      await saveEventAlert({ ...draft, notificationPermission });
+      setAlertSaveState("saved");
+      const permissionNote = draft.browserNotification && notificationPermission !== "granted"
+        ? ` Browser notifications are ${notificationPermission}; the in-terminal alert${draft.sound ? " and sound" : ""} remains active.`
+        : "";
+      setAlertMessage(`Event alert saved. It is evaluated every 60 seconds while this ATLAS terminal is open; a separate worker is required after the browser closes.${permissionNote}`);
+    } catch (error) {
+      setAlertSaveState("error");
+      setAlertMessage(error instanceof Error ? error.message : "The event alert could not be saved.");
+    }
+  };
+
   if (!result.data) return <DataState loading={result.loading} error={result.error} onRetry={result.reload} />;
   const baseStatus = researchStatus(result.meta, result.error);
   const classificationMessages: string[] = [];
+  if (filters.watchlistOnly && !watchlists.selected) {
+    classificationMessages.push("No watchlist is selected, so the selected-watchlist filter cannot match events.");
+  } else if (filters.watchlistOnly && selectedWatchlistSymbols.size === 0) {
+    classificationMessages.push(`${watchlists.selected?.name ?? "The selected watchlist"} has no symbols, so no events can match.`);
+  } else if (filters.watchlistOnly && watchlists.selected) {
+    classificationMessages.push(`Filtering against selected watchlist ${watchlists.selected.name} (${selectedWatchlistSymbols.size} symbols).`);
+  }
+  if (watchlists.message) classificationMessages.push(watchlists.message);
   const omittedSymbolCount = allEventSymbols.length - classificationSymbols.length;
   if (omittedSymbolCount > 0) {
     classificationMessages.push(`Security classification is limited to ${classificationSymbols.length} of ${allEventSymbols.length} event symbols; the remainder are excluded by sector or market-cap filters.`);
@@ -187,10 +260,22 @@ function LiveEventsPanelInner({ ticker, earningsOnly = false, onTickerSelect }: 
       status={status}
       filters={filters}
       sectors={sectors}
-      days={groupDays(events, nowIso)}
+      days={groupEventsByMarketDay(events, nowIso)}
       countdowns={countdowns}
       selectedEvent={selected}
       earnings={earnings}
+      referenceTime={nowIso}
+      watchlists={watchlists.lists.map((watchlist) => ({ id: watchlist.id, name: watchlist.name }))}
+      selectedWatchlistId={watchlists.selectedId}
+      onSelectedWatchlistChange={watchlists.setSelectedId}
+      alert={{
+        defaultTicker: selected?.symbol || requestedTicker || ticker,
+        selectedWatchlist: watchlists.selected ? { id: watchlists.selected.id, name: watchlists.selected.name } : null,
+        persistenceAvailable: watchlists.configured,
+        saveState: alertSaveState,
+        message: alertMessage,
+        onCreate: (draft) => { void createAlert(draft); },
+      }}
       onFiltersChange={setFilters}
       onEventSelect={(event) => setSelectedId(event.id)}
       onTickerSelect={onTickerSelect}
@@ -198,6 +283,6 @@ function LiveEventsPanelInner({ ticker, earningsOnly = false, onTickerSelect }: 
   );
 }
 
-export function LiveEventsPanel(props: { ticker: string; earningsOnly?: boolean; onTickerSelect: (ticker: string) => void }) {
-  return <LiveEventsPanelInner key={`${props.ticker}:${props.earningsOnly ? "earnings" : "events"}`} {...props} />;
+export function LiveEventsPanel(props: { ticker: string; earningsOnly?: boolean; initialEventId?: string | null; initialEventStartsAt?: string | null; onTickerSelect: (ticker: string) => void }) {
+  return <LiveEventsPanelInner key={`${props.ticker}:${props.earningsOnly ? "earnings" : "events"}:${props.initialEventId ?? "next"}`} {...props} />;
 }

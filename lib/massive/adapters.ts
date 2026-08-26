@@ -31,6 +31,14 @@ function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
 }
 
+function reportedPositive(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function reportedNonNegative(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 function toIsoTimestamp(value: number | undefined, fallback: string): string {
   if (value === undefined || !Number.isFinite(value)) {
     return fallback;
@@ -109,33 +117,41 @@ export function adaptSnapshot(
   const quality = options.quality ?? "unknown";
 
   let latestTrade: Trade | null = null;
+  const rawLastTrade = raw.lastTrade;
+  const reportedTradePrice = reportedPositive(rawLastTrade?.p);
   if (
-    raw.lastTrade?.p !== undefined &&
-    raw.lastTrade.s !== undefined &&
-    raw.lastTrade.t !== undefined
+    reportedTradePrice !== null &&
+    rawLastTrade?.s !== undefined &&
+    rawLastTrade.t !== undefined
   ) {
-    const timestamp = toIsoTimestamp(raw.lastTrade.t, asOf);
+    const timestamp = toIsoTimestamp(rawLastTrade.t, asOf);
     latestTrade = {
-      id: raw.lastTrade.i ?? null,
+      id: rawLastTrade.i ?? null,
       symbol,
-      price: raw.lastTrade.p,
-      size: raw.lastTrade.s,
+      price: reportedTradePrice,
+      size: rawLastTrade.s,
       timestamp,
-      exchange: raw.lastTrade.x ?? null,
-      conditions: raw.lastTrade.c ?? [],
-      tape: raw.lastTrade.z ?? null,
+      exchange: rawLastTrade.x ?? null,
+      conditions: rawLastTrade.c ?? [],
+      tape: rawLastTrade.z ?? null,
       asOf: timestamp,
       quality,
       source: "massive",
     };
   }
 
-  const dayBar = toBar(raw.day, {
-    symbol,
-    interval: "1D",
-    asOf,
-    quality,
-  });
+  // Massive can emit an all-zero current-day aggregate before the session has
+  // produced a real bar. Treat that provider sentinel as unavailable.
+  const currentSessionReported = [raw.day?.o, raw.day?.h, raw.day?.l, raw.day?.c]
+    .some((value) => reportedPositive(value) !== null);
+  const dayBar = currentSessionReported
+    ? toBar(raw.day, {
+        symbol,
+        interval: "1D",
+        asOf,
+        quality,
+      })
+    : null;
   const previousDayBar = toBar(raw.prevDay, {
     symbol,
     interval: "1D",
@@ -151,21 +167,21 @@ export function adaptSnapshot(
 
   const quote = {
     symbol,
-    lastPrice: raw.lastTrade?.p ?? raw.day?.c ?? null,
-    bidPrice: raw.lastQuote?.p ?? null,
-    bidSize: raw.lastQuote?.s ?? null,
-    askPrice: raw.lastQuote?.P ?? null,
-    askSize: raw.lastQuote?.S ?? null,
-    change: raw.todaysChange ?? null,
-    changePercent: raw.todaysChangePerc ?? null,
-    open: raw.day?.o ?? null,
-    high: raw.day?.h ?? null,
-    low: raw.day?.l ?? null,
-    previousClose: raw.prevDay?.c ?? null,
-    volume: raw.day?.v ?? null,
+    lastPrice: reportedTradePrice ?? reportedPositive(raw.day?.c),
+    bidPrice: reportedPositive(raw.lastQuote?.p),
+    bidSize: reportedNonNegative(raw.lastQuote?.s),
+    askPrice: reportedPositive(raw.lastQuote?.P),
+    askSize: reportedNonNegative(raw.lastQuote?.S),
+    change: currentSessionReported ? raw.todaysChange ?? null : null,
+    changePercent: currentSessionReported ? raw.todaysChangePerc ?? null : null,
+    open: reportedPositive(raw.day?.o),
+    high: reportedPositive(raw.day?.h),
+    low: reportedPositive(raw.day?.l),
+    previousClose: reportedPositive(raw.prevDay?.c),
+    volume: currentSessionReported ? reportedNonNegative(raw.day?.v) : null,
     averageVolume: null,
     marketCap: null,
-    vwap: raw.day?.vw ?? null,
+    vwap: reportedPositive(raw.day?.vw),
     session: "unknown" as const,
     asOf,
     quality,

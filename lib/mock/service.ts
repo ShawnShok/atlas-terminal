@@ -43,11 +43,15 @@ export class MockMarketDataService implements StockMarketDataService {
   async getNews(input: NewsQuery = {}): Promise<readonly NewsArticle[]> {
     const symbol = input.symbol?.trim().toUpperCase();
     const publishedAfter = input.publishedAfter ? Date.parse(input.publishedAfter) : null;
+    const publishedBefore = input.publishedBefore ? Date.parse(input.publishedBefore) : null;
     const articles = MOCK_NEWS.filter((article) =>
       (!symbol || article.tickers.some((ticker) => ticker === symbol))
       && (publishedAfter === null
         || !Number.isFinite(publishedAfter)
-        || Date.parse(article.publishedAt) >= publishedAfter));
+        || Date.parse(article.publishedAt) >= publishedAfter)
+      && (publishedBefore === null
+        || !Number.isFinite(publishedBefore)
+        || Date.parse(article.publishedAt) <= publishedBefore));
     const ordered = [...articles].sort((left, right) =>
       (input.order === "asc" ? 1 : -1)
       * (Date.parse(left.publishedAt) - Date.parse(right.publishedAt)));

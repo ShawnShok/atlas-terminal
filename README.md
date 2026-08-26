@@ -18,7 +18,7 @@ It is research software. It does not place trades, route orders, guarantee outco
 | Options | Expiration/strike/volume/open-interest filters, call/put chain, contract detail and price history, Greeks, put/call ratios, current-chain activity ranking, and a research strategy builder with payoff, break-even, max gain/loss, and combined Greeks. | No trade execution. Historical IV rank/percentile and historical activity baselines are not currently populated. |
 | Scanner | Built-in research presets, configurable conditions, sorting, news/event enrichment, and explicit missing-field handling. | Scans run over a curated U.S. research universe, not every listed security. Custom presets in the current panel are session-local; scanner persistence exists at `/api/personal`. |
 | Advanced analytics | Heatmap, current breadth, heuristic chart patterns, news-versus-price views, catalyst timeline, and normalized comparison for up to four securities. | Heatmap/breadth are curated-universe snapshots. News/event proximity is association only, never claimed causation. |
-| Personal research | PostgreSQL-backed notes, alert definitions, and settings UI; API support for watchlists, saved workspaces, and scanners. | Notes/alerts/settings require PostgreSQL. Alert definitions do not run without a separately deployed scheduler/worker. |
+| Personal research | PostgreSQL-backed notes, alert definitions, and settings UI; API support for watchlists, saved workspaces, and scanners. A single bounded monitor evaluates structured NEWS and EVENT alerts every 60 seconds while ATLAS is open. | Notes/alerts/settings require PostgreSQL. Browser-closed/background evaluation and non-NEWS/EVENT alert types still require a separately deployed scheduler/worker. |
 
 ## Architecture and trust boundaries
 
@@ -50,7 +50,7 @@ This increment deliberately strengthens the shared foundation beneath the existi
 | Existing and reusable | The terminal shell, authenticated API boundaries, normalized provider adapters, deterministic mock provider, bounded async cache, PostgreSQL/Prisma layer, and current research panels remain the base. |
 | Missing before this increment | Provider-neutral service contracts, one operational freshness model, intraday/options cache policies, shared news/event deduplication, one alert cooldown gate, scanner-run/read-news/cache persistence records, and same-owner default-reference validation. |
 | Compatibility choice | Existing `Notes`, `UserSettings`, and generic typed `Alert` records are extended instead of destructively renamed into several nearly identical tables. Existing JSON scanner definitions remain while relational conditions and run history are added. |
-| Deliberately deferred | A distributed cache, an alert scheduler/notification worker, streaming news distribution, and an edge-compatible hosted PostgreSQL path remain production infrastructure work. Existing later-stage UI surfaces are not expanded in this Stage 1 change. |
+| Deliberately deferred | A distributed cache, an always-on alert scheduler/notification worker, streaming news distribution, and an edge-compatible hosted PostgreSQL path remain production infrastructure work. The in-browser monitor is explicitly active-terminal-only and is not an off-browser scheduler. |
 
 The resulting service structure is:
 
@@ -61,7 +61,7 @@ lib/mock/          matching deterministic implementations and normalized fixture
 lib/cache/         async cache contract, bounded memory adapter, domain TTL policy
 lib/freshness/     provider-independent freshness state and labels
 lib/research/      news/event deduplication and shared research models
-lib/alerts/        common duplicate/cooldown delivery gate
+lib/alerts/        common duplicate/cooldown gate and deterministic active-terminal matching
 prisma/            tenant-scoped persistence models and additive migrations
 ```
 
@@ -198,7 +198,7 @@ The chart route supports ranges `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `3Y`,
 | `status` | Verifies whether PostgreSQL is configured and reachable from the runtime. | — | — | — |
 | `settings` | Reads the primary profile. | Upserts settings. | — | — |
 | `notes` | Lists notes, optionally by `symbol`. | Creates a note. | Updates by `id`. | Deletes by `id`. |
-| `alerts` | Lists alert definitions. | Creates a definition. | Updates by `id`. | Deletes by `id`. |
+| `alerts` | Lists alert definitions; `monitor=active-terminal` returns a bounded enabled NEWS/EVENT set. | Creates a definition. | Updates by `id`; narrow `active-terminal-evaluate` and `active-terminal-delivery` actions persist monitor state. | Deletes by `id`. |
 | `watchlists` | Lists ordered lists/tickers. | Creates a list. | — | Deletes by `id`. |
 | `workspaces` | Lists saved layouts. | Upserts by name. | — | Deletes by `id`. |
 | `scanners` | Lists saved definitions. | Creates a definition. | — | Deletes by `id`. |
@@ -208,7 +208,8 @@ The chart route supports ranges `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `3Y`,
 Current UI behavior is deliberately narrower than the API:
 
 - Notes support create, edit, delete, ticker filtering, and Markdown text stored privately in PostgreSQL.
-- Alerts support create/list/delete for price, percent-change, relative-volume, news, event, and technical definitions. Saving a definition does not evaluate it, notify anyone, or execute a trade; a scheduler/worker must do that separately.
+- Structured NEWS and EVENT definitions are evaluated by one centralized polling loop every 60 seconds while the terminal page remains open and PostgreSQL is configured. Each cycle is capped at 100 enabled definitions, 500 normalized source observations, eight new notifications, and a 20-second request window; the terminal status bar discloses when the definition cap is reached. The authenticated API applies the shared cooldown/dedup gate before the client emits an in-terminal toast and any configured browser/sound channels. Event status-transition rules establish and persist a prior-status baseline before they can match. Legacy free-form NEWS/EVENT definitions fail closed. This is not an off-browser scheduler, and no alert executes a trade.
+- Price, percent-change, relative-volume, technical, options, browser-closed, and continuous/background alert evaluation still require a separately deployed scheduler/worker.
 - Settings persist market timezone, default chart range, and refresh preference. The editor saves these values; not every already-mounted research module consumes them globally yet.
 - Workspace layouts can be saved and restored from the toolbar when PostgreSQL is configured.
 - Watchlist interactions and scanner custom presets remain session-local in the current panels. Durable watchlist/scanner APIs and schema are ready for later UI wiring.
@@ -301,7 +302,7 @@ pnpm verify:client-bundle
 pnpm prisma:validate
 ```
 
-The same checks can be run in order with `pnpm verify`. The unit suite covers command parsing, workspace-tree invariants, stock calculations, SIC/market-cap classification, research adapters, technical indicators, options analytics, scanner rules, advanced analytics, cache boundaries/LRU behavior, freshness labels, news/event deduplication, alert cooldowns, persistence invariants, and credential boundaries. `test:render` is the production-render smoke test, and `verify:client-bundle` rejects provider credential material in client assets. Use mock mode for repeatable, network-free application verification; a live provider key and database are only needed for live entitlement checks and personal persistence integration.
+The same checks can be run in order with `pnpm verify`. The unit suite covers command parsing, workspace-tree invariants, stock calculations, SIC/market-cap classification, research adapters, technical indicators, options analytics, scanner rules, advanced analytics, cache boundaries/LRU behavior, freshness labels, news/event deduplication, deterministic active-terminal alert matching, alert cooldowns, persistence invariants, and credential boundaries. `test:render` is the production-render smoke test, and `verify:client-bundle` rejects provider credential material in client assets. Use mock mode for repeatable, network-free application verification; a live provider key and database are only needed for live entitlement checks and personal persistence integration.
 
 ## Project map
 
@@ -317,7 +318,7 @@ lib/services/                 Provider-neutral service capability contracts
 lib/mock/                     Deterministic research provider
 lib/cache/                    Cache contract, TTL policy and memory adapter
 lib/freshness/                Data-age/session normalization and display labels
-lib/alerts/                   Shared alert duplicate/cooldown evaluation
+lib/alerts/                   Shared alert matching plus duplicate/cooldown evaluation
 lib/indicators/               Technical indicator calculations
 lib/options/                  Chain, activity, Greeks and strategy analytics
 lib/scanner/                  Scanner definitions and evaluation

@@ -18,7 +18,15 @@ const model = await import(
   `data:text/javascript;base64,${Buffer.from(transpiled.outputText).toString("base64")}`
 );
 
-const { findNextRowIndex, normalizeChartBars, reorderSymbols, sortSnapshotRows } = model;
+const {
+  MAX_WATCHLIST_SYMBOLS,
+  findNextRowIndex,
+  normalizeChartBars,
+  normalizeWatchlistSymbols,
+  reorderSymbols,
+  sortSnapshotRows,
+  sortWatchlistQuotes,
+} = model;
 
 const bar = (timestamp, close, overrides = {}) => ({
   symbol: "NVDA",
@@ -94,3 +102,39 @@ test("keyboard row navigation remains within table bounds", () => {
   assert.equal(findNextRowIndex(0, "next", 0), -1);
 });
 
+test("normalizes and sorts enriched watchlist quotes without fabricating missing values", () => {
+  assert.deepEqual(normalizeWatchlistSymbols([" nvda ", "AAPL", "NVDA", "bad symbol"]), ["NVDA", "AAPL"]);
+  const bounded = normalizeWatchlistSymbols(Array.from({ length: 120 }, (_, index) => `T${index}`));
+  assert.equal(MAX_WATCHLIST_SYMBOLS, 100);
+  assert.equal(bounded.length, MAX_WATCHLIST_SYMBOLS);
+  const quote = (ticker, dailyRvol, latestNews) => ({
+    ticker,
+    companyName: ticker,
+    price: 100,
+    change: 1,
+    changePercent: 1,
+    bid: null,
+    ask: null,
+    dayHigh: 101,
+    dayLow: 99,
+    previousClose: 99,
+    volume: 1_000,
+    averageVolume: 500,
+    dailyRvol,
+    intradayRvol: null,
+    vwap: 100,
+    distanceFromVwapPercent: 0,
+    marketCap: null,
+    latestNews,
+    nextEvent: null,
+    optionsActivity: null,
+    freshness: { status: "delayed", delayMinutes: 15, lastUpdatedAt: "2026-08-19T15:00:00Z", source: "test", marketSession: "regular" },
+  });
+  const rows = [
+    quote("AAPL", null, null),
+    quote("NVDA", 3.2, { id: "n1", title: "News", publishedAt: "2026-08-19T14:59:00Z", articleUrl: null, publisher: "Test" }),
+    quote("AMD", 1.4, null),
+  ];
+  assert.deepEqual(sortWatchlistQuotes(rows, "relativeVolume", "descending").map(({ ticker }) => ticker), ["NVDA", "AMD", "AAPL"]);
+  assert.deepEqual(sortWatchlistQuotes(rows, "latestNewsAt", "descending").map(({ ticker }) => ticker), ["NVDA", "AAPL", "AMD"]);
+});

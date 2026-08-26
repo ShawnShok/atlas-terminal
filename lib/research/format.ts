@@ -58,7 +58,11 @@ export function formatTime(value: string): string {
 }
 
 export function formatDate(value: string): string {
-  const date = new Date(value);
+  // A provider calendar date is not a UTC timestamp. Parsing YYYY-MM-DD with
+  // `new Date` creates midnight UTC, which renders as the previous day in New
+  // York. Anchor date-only values at noon UTC so the displayed calendar day is
+  // stable in every North American timezone.
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
   if (!Number.isFinite(date.getTime())) return "—";
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -72,4 +76,3 @@ export function valueTone(value: number | null): "positive" | "negative" | "neut
   if (value === null || value === 0) return "neutral";
   return value > 0 ? "positive" : "negative";
 }
-

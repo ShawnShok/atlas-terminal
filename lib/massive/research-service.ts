@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import type { CacheTtlConfig } from "@/lib/cache";
 import { AppError, isAppError } from "@/lib/errors";
+import {
+  dedupeCorporateEvents,
+  dedupeNewsArticles,
+} from "@/lib/research/deduplication";
 import type {
   BenzingaNewsQuery,
   CorporateEventsQuery,
@@ -39,10 +43,13 @@ import {
   massiveTickerSearchResponseSchema,
   massiveTmxEventsResponseSchema,
   type MassiveFinancialsResponse,
+  type MassiveBenzingaNewsResponse,
   type MassiveOptionChainResponse,
   type MassiveRatiosResponse,
+  type MassiveTmxEventsResponse,
 } from "./research-schemas";
 import type { MassiveClient, MassiveQueryValue } from "./client";
+import { collectBoundedProviderPages } from "./pagination";
 
 export type {
   BenzingaNewsQuery,
@@ -56,6 +63,10 @@ const tickerSchema = z
   .toUpperCase()
   .regex(/^[A-Z][A-Z0-9.-]{0,14}$/);
 const dateSchema = z.iso.date();
+const MAX_BENZINGA_NEWS_PAGES = 5;
+const MAX_TMX_EVENT_PAGES = 8;
+const BENZINGA_NEWS_PAGE_SIZE = 100;
+const TMX_EVENT_PAGE_SIZE = 250;
 
 const DEFAULT_RESEARCH_UNIVERSE = [
   "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "TSLA",
@@ -175,12 +186,14 @@ export class MassiveResearchService implements ResearchService {
   async getBenzingaNews(input: BenzingaNewsQuery = {}): Promise<NewsResearchBundle> {
     const ticker = input.ticker ? normalizeTicker(input.ticker) : undefined;
     const limit = Math.min(500, Math.max(1, Math.trunc(input.limit ?? 120)));
-    const response = await this.#client.request({
+    const pageLimit = Math.min(BENZINGA_NEWS_PAGE_SIZE, limit);
+    const first = await this.#client.request({
       path: "/benzinga/v2/news",
       query: {
         tickers: ticker,
         "published.gte": input.publishedAfter,
-        limit,
+        "published.lte": input.publishedBefore,
+        limit: pageLimit,
         sort: "published.desc",
       },
       schema: massiveBenzingaNewsResponseSchema,
@@ -190,14 +203,29 @@ export class MassiveResearchService implements ResearchService {
       staleIfErrorMs: 0,
     });
     const keyword = input.keyword?.trim().toLowerCase();
-    const articles = adaptBenzingaNews(response).filter((article) => {
-      if (input.category && !article.categories.includes(input.category as typeof article.categories[number])) return false;
-      if (!keyword) return true;
-      return [article.title, article.summary ?? "", article.body ?? "", ...article.keywords]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword);
-    });
+    const articlesFromPages = (pages: readonly MassiveBenzingaNewsResponse[]) => {
+      const combined: MassiveBenzingaNewsResponse = {
+        ...first,
+        next_url: undefined,
+        results: pages.flatMap((page) => page.results ?? []),
+      };
+      return dedupeNewsArticles(adaptBenzingaNews(combined)).filter((article) => {
+        if (input.category && !article.categories.includes(input.category as typeof article.categories[number])) return false;
+        if (!keyword) return true;
+        return [article.title, article.summary ?? "", article.body ?? "", ...article.keywords]
+          .join(" ")
+          .toLowerCase()
+          .includes(keyword);
+      });
+    };
+    const pages = await this.#collectPages(
+      first,
+      massiveBenzingaNewsResponseSchema,
+      MAX_BENZINGA_NEWS_PAGES,
+      this.#ttls.news,
+      (collected) => articlesFromPages(collected).length >= limit,
+    );
+    const articles = articlesFromPages(pages).slice(0, limit);
     return { articles, filterTicker: ticker ?? null };
   }
 
@@ -208,14 +236,16 @@ export class MassiveResearchService implements ResearchService {
     if (from > to) {
       throw new AppError("VALIDATION_ERROR", "Event start date must precede the end date.");
     }
-    const response = await this.#client.request({
+    const limit = Math.min(1_000, Math.max(1, Math.trunc(input.limit ?? 500)));
+    const pageLimit = Math.min(TMX_EVENT_PAGE_SIZE, limit);
+    const first = await this.#client.request({
       path: "/tmx/v1/corporate-events",
       query: {
         ticker,
         "date.gte": from,
         "date.lte": to,
         type: input.type,
-        limit: Math.min(1_000, Math.max(1, Math.trunc(input.limit ?? 500))),
+        limit: pageLimit,
         sort: "date.asc",
       },
       schema: massiveTmxEventsResponseSchema,
@@ -224,7 +254,27 @@ export class MassiveResearchService implements ResearchService {
       // serving stale fallback data that could be labeled as newly fetched.
       staleIfErrorMs: 0,
     });
-    return { events: adaptTmxEvents(response), filterTicker: ticker ?? null, from, to };
+    const eventsFromPages = (pages: readonly MassiveTmxEventsResponse[]) => {
+      const combined: MassiveTmxEventsResponse = {
+        ...first,
+        next_url: undefined,
+        results: pages.flatMap((page) => page.results ?? []),
+      };
+      return dedupeCorporateEvents(adaptTmxEvents(combined));
+    };
+    const pages = await this.#collectPages(
+      first,
+      massiveTmxEventsResponseSchema,
+      MAX_TMX_EVENT_PAGES,
+      this.#ttls.event,
+      (collected) => eventsFromPages(collected).length >= limit,
+    );
+    return {
+      events: eventsFromPages(pages).slice(0, limit),
+      filterTicker: ticker ?? null,
+      from,
+      to,
+    };
   }
 
   async getOptionExpirations(symbolInput: string): Promise<readonly string[]> {
@@ -278,7 +328,8 @@ export class MassiveResearchService implements ResearchService {
       next_url: undefined,
       results: pages.flatMap((page) => page.results ?? []),
     };
-    const bundle = adaptOptionChain(combined, symbol, expiration);
+    const contractsComplete = !pages.at(-1)?.next_url;
+    const bundle = adaptOptionChain(combined, symbol, expiration, contractsComplete);
     return { ...bundle, expirations };
   }
 
@@ -352,25 +403,24 @@ export class MassiveResearchService implements ResearchService {
     schema: z.ZodType<T>,
     maxPages: number,
     cacheTtlMs: number,
+    isComplete?: (pages: readonly T[]) => boolean,
   ): Promise<readonly T[]> {
-    const pages: T[] = [first];
-    let nextUrl = first.next_url;
-    while (nextUrl && pages.length < maxPages) {
-      const next = this.#safeNextRequest(nextUrl);
-      const page = await this.#client.request({
-        path: next.path,
-        query: next.query,
-        schema,
-        cacheTtlMs,
-        // This paginator currently serves only option reference/snapshot calls.
-        // Those responses carry freshness labels, so stale pages are unsafe to
-        // merge into a response that could otherwise be presented as live.
-        staleIfErrorMs: 0,
-      });
-      pages.push(page);
-      nextUrl = page.next_url;
-    }
-    return pages;
+    return collectBoundedProviderPages(first, {
+      maxPages,
+      isComplete,
+      loadNext: async (nextUrl) => {
+        const next = this.#safeNextRequest(nextUrl);
+        return this.#client.request({
+          path: next.path,
+          query: next.query,
+          schema,
+          cacheTtlMs,
+          // News, event, and option pages all carry time-sensitive records. A
+          // stale page must never be merged into an otherwise fresh response.
+          staleIfErrorMs: 0,
+        });
+      },
+    });
   }
 
   #safeNextRequest(nextUrl: string): {

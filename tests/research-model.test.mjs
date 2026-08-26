@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
+import { loadTypeScriptModule } from "./helpers/load-typescript-module.mjs";
+
 const source = await readFile(new URL("../lib/research/model.ts", import.meta.url), "utf8");
 const transpiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -23,11 +25,15 @@ const {
   calculateBreadthPercentages,
   calculateDaysToExpiration,
   describeScannerCondition,
+  filterOptionContracts,
   formatCountdown,
   groupOptionsByStrike,
   isRecent,
   normalizeTicker,
 } = model;
+const { formatDate } = await loadTypeScriptModule(
+  new URL("../lib/research/format.ts", import.meta.url),
+);
 
 const option = (type, strikePrice, symbol) => ({
   symbol,
@@ -38,8 +44,10 @@ const option = (type, strikePrice, symbol) => ({
   exerciseStyle: "american",
   sharesPerContract: 100,
   lastPrice: 3,
+  lastPriceSource: "last-trade",
   bidPrice: 2.9,
   askPrice: 3.1,
+  quoteAvailability: "available",
   volume: 100,
   openInterest: 400,
   impliedVolatility: 0.42,
@@ -84,6 +92,35 @@ test("pairs calls and puts by strike and labels moneyness", () => {
   assert.equal(rows[2].putMoneyness, "itm");
 });
 
+test("filters options only on reported values across type, ratio, IV, delta, and moneyness", () => {
+  const contracts = [
+    { ...option("call", 95, "C95"), volume: 250, openInterest: 100, impliedVolatility: 0.45, greeks: { ...option("call", 95, "C95").greeks, delta: 0.7 } },
+    { ...option("put", 105, "P105"), volume: 25, openInterest: 100, impliedVolatility: 0.3, greeks: { ...option("put", 105, "P105").greeks, delta: -0.6 } },
+    { ...option("call", 110, "C110"), volume: null, openInterest: null, impliedVolatility: null, greeks: { ...option("call", 110, "C110").greeks, delta: null } },
+  ];
+  const baseFilters = {
+    expirationDate: "2026-09-18",
+    contractType: "call",
+    strikeMin: null,
+    strikeMax: null,
+    minimumVolume: null,
+    minimumOpenInterest: null,
+    minimumVolumeToOpenInterest: 2,
+    impliedVolatilityMin: 40,
+    impliedVolatilityMax: 50,
+    deltaMin: 0.5,
+    deltaMax: 0.8,
+    moneyness: "itm",
+  };
+
+  assert.deepEqual(filterOptionContracts(contracts, baseFilters, 100).map(({ symbol }) => symbol), ["C95"]);
+  assert.deepEqual(
+    filterOptionContracts(contracts, { ...baseFilters, contractType: "all", minimumVolumeToOpenInterest: 0, impliedVolatilityMin: 0, impliedVolatilityMax: 100, deltaMin: -1, deltaMax: 1, moneyness: "all" }, 100).map(({ symbol }) => symbol),
+    ["C95", "P105"],
+    "contracts with missing numeric fields must not pass active numeric filters",
+  );
+});
+
 test("calculates DTE and breadth without divide-by-zero output", () => {
   assert.equal(calculateDaysToExpiration("2026-08-18", "2026-08-15T20:00:00Z"), 3);
   assert.deepEqual(
@@ -94,6 +131,11 @@ test("calculates DTE and breadth without divide-by-zero output", () => {
     calculateBreadthPercentages({ advancing: 6, declining: 3, unchanged: 1 }),
     { advancing: 60, declining: 30, unchanged: 10 },
   );
+});
+
+test("formats provider calendar dates without shifting to the prior Eastern day", () => {
+  assert.equal(formatDate("2026-08-26"), "Aug 26, 2026");
+  assert.equal(formatDate("2026-08-26T14:30:00Z"), "Aug 26, 2026");
 });
 
 test("describes scanner catalyst conditions for display and persistence", () => {
@@ -119,4 +161,3 @@ test("describes scanner catalyst conditions for display and persistence", () => 
     "PRICE BETWEEN 10 USD AND 25 USD",
   );
 });
-

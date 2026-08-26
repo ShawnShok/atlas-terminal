@@ -32,6 +32,7 @@ export interface AggregateBarsInput {
 export interface NewsQuery {
   readonly symbol?: string;
   readonly publishedAfter?: string;
+  readonly publishedBefore?: string;
   readonly limit?: number;
   readonly order?: "asc" | "desc";
 }
@@ -59,6 +60,7 @@ export interface TickerResearchService {
 export interface BenzingaNewsQuery {
   readonly ticker?: string;
   readonly publishedAfter?: string;
+  readonly publishedBefore?: string;
   readonly category?: string;
   readonly keyword?: string;
   readonly limit?: number;

@@ -12,6 +12,7 @@ export type PanelView =
   | "options"
   | "scanner"
   | "analytics"
+  | "timeline"
   | "alerts"
   | "notes"
   | "settings"
@@ -43,6 +44,12 @@ export interface WorkspaceLayout {
   id: string;
   name: string;
   root: WorkspaceNode;
+}
+
+export interface WorkspaceCommandTarget {
+  readonly sequence: number;
+  readonly watchlistName?: string;
+  readonly scannerPresetId?: string;
 }
 
 export type WorkspaceAction =
@@ -141,7 +148,7 @@ export function workspaceReducer(
           (node) => node.type === "panel" && node.id === action.panelId,
           (node) =>
             node.type === "panel"
-              ? { ...node, ticker: action.ticker.toUpperCase().slice(0, 8) }
+              ? { ...node, ticker: action.ticker.toUpperCase().slice(0, 15) }
               : node,
         ),
       };

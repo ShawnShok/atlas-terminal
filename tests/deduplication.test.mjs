@@ -96,6 +96,17 @@ test("event deduplication uses stable provider IDs and keeps the latest status",
   assert.equal(result[0].description, "Confirmed event with a webcast.");
 });
 
+test("event deduplication does not merge distinct provider records that share a generic URL", () => {
+  const sharedUrl = "https://example.com/company/events";
+  const earnings = event({ id: "tmx-earnings", title: "Quarterly results", eventUrl: sharedUrl });
+  const conference = event({ id: "tmx-conference", title: "Industry conference", eventUrl: sharedUrl });
+  assert.notEqual(eventDedupeKey(earnings), eventDedupeKey(conference));
+  assert.deepEqual(
+    dedupeCorporateEvents([earnings, conference]).map((item) => item.id),
+    ["tmx-conference", "tmx-earnings"],
+  );
+});
+
 test("event deduplication sorts by start timestamp", () => {
   const later = event({ id: "later", startsAt: "2026-08-24T12:00:00Z" });
   const sooner = event({ id: "sooner", startsAt: "2026-08-20T12:00:00Z" });

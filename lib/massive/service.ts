@@ -80,6 +80,7 @@ const aggregatesInputSchema = z
 const newsInputSchema = z.object({
   symbol: tickerSchema.optional(),
   publishedAfter: z.iso.datetime({ offset: true }).optional(),
+  publishedBefore: z.iso.datetime({ offset: true }).optional(),
   limit: z.number().int().positive().max(1_000).default(50),
   order: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -183,6 +184,7 @@ export class MassiveMarketDataService implements StockMarketDataService {
       query: {
         ticker: parsed.symbol,
         "published_utc.gte": parsed.publishedAfter,
+        "published_utc.lte": parsed.publishedBefore,
         limit: parsed.limit,
         order: parsed.order,
         sort: "published_utc",

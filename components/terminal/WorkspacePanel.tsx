@@ -8,17 +8,19 @@ import {
   Rows2,
   X,
 } from "lucide-react";
-import type { PanelView, WorkspacePanel as PanelModel } from "@/lib/workspace/model";
+import type { PanelView, WorkspaceCommandTarget, WorkspacePanel as PanelModel } from "@/lib/workspace/model";
 import { PanelContent } from "./PanelContent";
 
 interface WorkspacePanelProps {
   panel: PanelModel;
   active: boolean;
   maximized: boolean;
+  hiddenByMaximize: boolean;
   canClose: boolean;
   activity: string[];
   recentTickers: readonly string[];
   comparisonSymbols?: readonly string[];
+  commandTarget?: WorkspaceCommandTarget | null;
   onActivate: () => void;
   onClose: () => void;
   onMaximize: () => void;
@@ -41,6 +43,7 @@ const VIEW_LABELS: Record<PanelView, string> = {
   options: "Options",
   scanner: "Scanner",
   analytics: "Analytics",
+  timeline: "Ticker timeline",
   alerts: "Alerts",
   notes: "Notes",
   settings: "Settings",
@@ -53,10 +56,12 @@ export function WorkspacePanel({
   panel,
   active,
   maximized,
+  hiddenByMaximize,
   canClose,
   activity,
   recentTickers,
   comparisonSymbols,
+  commandTarget,
   onActivate,
   onClose,
   onMaximize,
@@ -64,22 +69,23 @@ export function WorkspacePanel({
   onTickerChange,
   onViewChange,
 }: WorkspacePanelProps) {
-  const [tickerDraft, setTickerDraft] = useState(panel.ticker);
+  const [tickerDraft, setTickerDraft] = useState<string | null>(null);
   const commitTicker = () => {
-    const normalized = tickerDraft.trim().toUpperCase();
+    const normalized = (tickerDraft ?? panel.ticker).trim().toUpperCase();
     if (/^[A-Z][A-Z0-9.-]{0,14}$/.test(normalized)) onTickerChange(normalized);
-    else setTickerDraft(panel.ticker);
+    setTickerDraft(null);
   };
   return (
     <section
-      className={active ? "workspace-panel is-active" : "workspace-panel"}
+      className={`workspace-panel${active ? " is-active" : ""}${hiddenByMaximize ? " is-maximized-hidden" : ""}`}
+      aria-hidden={hiddenByMaximize ? true : undefined}
       onPointerDown={onActivate}
     >
       <header className="panel-header">
         <span className="panel-index">{panel.id.slice(-2).toUpperCase()}</span>
         <input
           className="panel-ticker-input"
-          value={tickerDraft}
+          value={tickerDraft ?? panel.ticker}
           aria-label="Panel ticker"
           maxLength={15}
           onChange={(event) => setTickerDraft(event.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ""))}
@@ -87,11 +93,14 @@ export function WorkspacePanel({
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
             if (event.key === "Escape") {
-              setTickerDraft(panel.ticker);
+              setTickerDraft(null);
               event.currentTarget.blur();
             }
           }}
-          onFocus={(event) => event.currentTarget.select()}
+          onFocus={(event) => {
+            setTickerDraft(panel.ticker);
+            event.currentTarget.select();
+          }}
         />
         <select
           className="panel-view-select"
@@ -116,6 +125,7 @@ export function WorkspacePanel({
           activity={activity}
           recentTickers={recentTickers}
           comparisonSymbols={comparisonSymbols}
+          commandTarget={commandTarget}
           onTickerChange={onTickerChange}
           onViewChange={onViewChange}
         />

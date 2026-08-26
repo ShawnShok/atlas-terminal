@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { SecurityResearchBundle } from "@/types/research";
 import {
   stockCompact,
@@ -38,6 +39,12 @@ export function StockQuoteHeader({ security }: StockQuoteHeaderProps) {
   const { details, snapshot } = security;
   const quote = snapshot.quote;
   const tone = stockTone(quote.changePercent);
+  const spread = quote.bidPrice !== null && quote.askPrice !== null && quote.askPrice >= quote.bidPrice
+    ? quote.askPrice - quote.bidPrice
+    : null;
+  const dailyRvol = quote.volume !== null && quote.averageVolume !== null && quote.averageVolume > 0
+    ? quote.volume / quote.averageVolume
+    : null;
   return (
     <header className="stock-quote-header">
       <div className="stock-security-identity">
@@ -49,9 +56,11 @@ export function StockQuoteHeader({ security }: StockQuoteHeaderProps) {
         <strong>{stockCurrency(quote.lastPrice)}</strong>
         <em className={tone}>{stockCurrency(quote.change)} · {stockPercent(quote.changePercent)}</em>
       </div>
-      <QuoteMetric label="BID" value={stockCurrency(quote.bidPrice)} detail={quote.bidSize === null ? undefined : `${stockNumber(quote.bidSize, 0)} ×`} />
-      <QuoteMetric label="ASK" value={stockCurrency(quote.askPrice)} detail={quote.askSize === null ? undefined : `${stockNumber(quote.askSize, 0)} ×`} />
-      <QuoteMetric label="VOLUME" value={stockCompact(quote.volume)} detail={`AVG ${stockCompact(quote.averageVolume)}`} />
+      {quote.bidPrice !== null ? <QuoteMetric label="BID" value={stockCurrency(quote.bidPrice)} detail={quote.bidSize === null ? undefined : `${stockNumber(quote.bidSize, 0)} ×`} /> : null}
+      {quote.askPrice !== null ? <QuoteMetric label="ASK" value={stockCurrency(quote.askPrice)} detail={quote.askSize === null ? undefined : `${stockNumber(quote.askSize, 0)} ×`} /> : null}
+      {spread !== null ? <QuoteMetric label="SPREAD" value={stockCurrency(spread)} /> : null}
+      <QuoteMetric label="VOLUME" value={stockCompact(quote.volume)} detail={quote.averageVolume === null ? "AVERAGE UNAVAILABLE" : `AVG ${stockCompact(quote.averageVolume)}`} />
+      <QuoteMetric label="DAILY RVOL" value={dailyRvol === null ? "—" : `${stockNumber(dailyRvol)}×`} detail={dailyRvol === null ? "BASELINE UNAVAILABLE" : "VOLUME / AVG VOLUME"} />
       <QuoteMetric label="MARKET CAP" value={stockCompact(quote.marketCap ?? details.marketCap)} />
       <div className="stock-session-block"><span>SESSION</span><strong>{quote.session.replaceAll("-", " ")}</strong><time dateTime={quote.asOf}>{stockDateTime(quote.asOf)}</time></div>
     </header>
@@ -65,6 +74,8 @@ export interface StockOverviewProps {
 export function StockOverview({ security }: StockOverviewProps) {
   const { details, snapshot } = security;
   const quote = snapshot.quote;
+  const high52Week = security.bars.length ? Math.max(...security.bars.map((bar) => bar.high)) : null;
+  const low52Week = security.bars.length ? Math.min(...security.bars.map((bar) => bar.low)) : null;
   return (
     <div className="stock-overview">
       <section className="stock-overview-metrics" aria-label="Trading overview">
@@ -77,6 +88,8 @@ export function StockOverview({ security }: StockOverviewProps) {
           <QuoteMetric label="VWAP" value={stockCurrency(quote.vwap)} />
           <QuoteMetric label="LAST TRADE" value={snapshot.latestTrade ? stockCurrency(snapshot.latestTrade.price) : "—"} detail={snapshot.latestTrade ? `${stockNumber(snapshot.latestTrade.size, 0)} SHARES` : undefined} />
           <QuoteMetric label="DAY RANGE" value={quote.low === null || quote.high === null ? "—" : `${stockCurrency(quote.low)} — ${stockCurrency(quote.high)}`} />
+          <QuoteMetric label="52-WEEK HIGH" value={stockCurrency(high52Week)} />
+          <QuoteMetric label="52-WEEK LOW" value={stockCurrency(low52Week)} />
           <QuoteMetric label="DATA QUALITY" value={quote.quality.replaceAll("-", " ").toUpperCase()} detail={quote.source.toUpperCase()} />
         </div>
       </section>
@@ -106,7 +119,7 @@ export interface StockTerminalProps {
   readonly chartSettings: ChartDisplaySettings;
   readonly indicatorSeries: readonly ChartIndicatorSeries[];
   readonly search?: TickerSearchProps;
-  readonly onViewChange: (view: StockTerminalView) => void;
+  readonly overviewIntelligence?: ReactNode;
   readonly onChartSettingsChange: (settings: ChartDisplaySettings) => void;
 }
 
@@ -117,7 +130,7 @@ export function StockTerminal({
   chartSettings,
   indicatorSeries,
   search,
-  onViewChange,
+  overviewIntelligence,
   onChartSettingsChange,
 }: StockTerminalProps) {
   return (
@@ -125,17 +138,13 @@ export function StockTerminal({
       title={security ? `${security.details.symbol} SECURITY` : "SECURITY RESEARCH"}
       eyebrow="U.S. EQUITIES"
       status={status}
-      className="stock-terminal"
+      className={`stock-terminal stock-terminal-${activeView}`}
       actions={search ? <TickerSearch {...search} /> : undefined}
     >
       {security ? (
         <>
           <StockQuoteHeader security={security} />
-          <nav className="stock-view-tabs" aria-label="Security view">
-            <button type="button" className={activeView === "overview" ? "is-active" : ""} aria-current={activeView === "overview" ? "page" : undefined} onClick={() => onViewChange("overview")}>OVERVIEW</button>
-            <button type="button" className={activeView === "chart" ? "is-active" : ""} aria-current={activeView === "chart" ? "page" : undefined} onClick={() => onViewChange("chart")}>CHART</button>
-          </nav>
-          {activeView === "overview" ? <StockOverview security={security} /> : (
+          {activeView === "overview" ? <><StockOverview security={security} />{overviewIntelligence}</> : (
             <PriceChart
               symbol={security.details.symbol}
               bars={security.bars}
@@ -155,4 +164,3 @@ export function StockTerminal({
     </StockFrame>
   );
 }
-

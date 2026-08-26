@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getServerEnv } from "@/lib/env";
-import { isAppError, normalizeError } from "@/lib/errors";
+import { AppError, isAppError, normalizeError } from "@/lib/errors";
 import { describeFreshness } from "@/lib/freshness";
 import {
   DEFAULT_RESEARCH_UNIVERSE,
@@ -12,10 +12,16 @@ import { getMockResearchService } from "@/lib/mock";
 import {
   dedupeCorporateEvents,
   dedupeNewsArticles,
+  optionsActivityTimelineEntries,
   researchSectorFromSic,
+  volumeSpikeTimelineEntries,
 } from "@/lib/research";
+import { relativeVolume } from "@/lib/indicators";
+import { findUnusualOptionActivity } from "@/lib/options";
+import { buildScannerContextRow, mapWithConcurrency, type ScannerContextBundle } from "@/lib/scanner";
 import type {
   BenzingaNewsService,
+  ResearchService,
   StockMarketService,
 } from "@/lib/services";
 import type {
@@ -28,9 +34,13 @@ import type {
   MarketSession,
   NewsArticle,
   NewsResearchBundle,
-  SecurityClassification,
+  OptionChainBundle,
   SecurityResearchBundle,
+  Snapshot,
+  SecurityClassification,
   TerminalApiSuccess,
+  TickerDetails,
+  WatchlistQuote,
 } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +49,9 @@ const TICKER_PATTERN = /^[A-Z][A-Z0-9.-]{0,14}$/;
 const OPTION_TICKER_PATTERN = /^O:[A-Z0-9.-]{1,15}[0-9]{6}[CP][0-9]{8}$/;
 const CHATGPT_USER_EMAIL_HEADER = "oai-authenticated-user-email";
 const MAX_UPSTREAM_BARS = 5_000;
+const SCANNER_CONTEXT_SAFETY_LIMIT = 100;
+const SCANNER_CONTEXT_CONCURRENCY = 4;
+const SCANNER_INTRADAY_HISTORY_DAYS = 35;
 const NEWS_CATEGORIES = new Set(["breaking", "earnings", "analyst", "mergers-acquisitions", "fda", "guidance", "macro", "company", "markets", "other"]);
 
 const CHART_INTERVALS = {
@@ -71,6 +84,7 @@ const TMX_EVENT_TYPES: Readonly<Record<CorporateEventType, readonly string[]>> =
 interface LiveNewsQuery {
   readonly ticker?: string;
   readonly publishedAfter?: string;
+  readonly publishedBefore?: string;
   readonly category?: string;
   readonly keyword?: string;
   readonly limit?: number;
@@ -78,7 +92,7 @@ interface LiveNewsQuery {
 
 interface LiveNewsResult {
   readonly bundle: NewsResearchBundle;
-  readonly source: "benzinga" | "massive stock news";
+  readonly source: "benzinga" | "massive stock news" | "mock";
   readonly note: string | null;
 }
 
@@ -87,7 +101,13 @@ function filterNewsArticles(
   input: LiveNewsQuery,
 ): readonly NewsArticle[] {
   const keyword = input.keyword?.trim().toLowerCase();
+  const publishedBefore = input.publishedBefore ? Date.parse(input.publishedBefore) : null;
   return dedupeNewsArticles(articles).filter((article) => {
+    if (
+      publishedBefore !== null
+      && Number.isFinite(publishedBefore)
+      && Date.parse(article.publishedAt) > publishedBefore
+    ) return false;
     if (input.category && !article.categories.includes(input.category as typeof article.categories[number])) {
       return false;
     }
@@ -116,6 +136,7 @@ async function getLiveNewsWithFallback(
       const articles = await market.getNews({
         symbol: input.ticker,
         publishedAfter: input.publishedAfter,
+        publishedBefore: input.publishedBefore,
         limit: Math.min(1_000, Math.max(1, Math.trunc(input.limit ?? 120))),
         order: "desc",
       });
@@ -143,36 +164,49 @@ function hasOwnKey<ObjectType extends object>(
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function ticker(value: string | null, fallback = "NVDA"): string {
-  const normalized = (value ?? fallback).trim().toUpperCase();
-  if (!TICKER_PATTERN.test(normalized)) throw new Error("Ticker format is invalid.");
+function ticker(value: string | null, fallback?: string): string {
+  const normalized = (value ?? fallback ?? "").trim().toUpperCase();
+  if (!normalized) {
+    throw new AppError("VALIDATION_ERROR", "A ticker query parameter is required.");
+  }
+  if (!TICKER_PATTERN.test(normalized)) {
+    throw new AppError("VALIDATION_ERROR", "Ticker format is invalid.");
+  }
   return normalized;
 }
 
-function symbols(value: string | null, fallback: readonly string[]): readonly string[] {
+function symbols(value: string | null, fallback: readonly string[], maximum = 100): readonly string[] {
   const values = value ? value.split(",") : fallback;
   const normalized = [...new Set(values.map((item) => ticker(item)))];
-  if (normalized.length > 100) throw new Error("Too many tickers were requested.");
+  if (normalized.length > maximum) {
+    throw new AppError("VALIDATION_ERROR", "Too many tickers were requested.");
+  }
   return normalized;
 }
 
 function optionContract(value: string | null): string {
   const normalized = (value ?? "").trim().toUpperCase();
-  if (!OPTION_TICKER_PATTERN.test(normalized)) throw new Error("Option contract format is invalid.");
+  if (!OPTION_TICKER_PATTERN.test(normalized)) {
+    throw new AppError("VALIDATION_ERROR", "Option contract format is invalid.");
+  }
   return normalized;
 }
 
 function newsCategory(value: string | null): string | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase();
-  if (!NEWS_CATEGORIES.has(normalized)) throw new Error("News category is invalid.");
+  if (!NEWS_CATEGORIES.has(normalized)) {
+    throw new AppError("VALIDATION_ERROR", "News category is invalid.");
+  }
   return normalized;
 }
 
 function isoTimestamp(value: string | null): string | undefined {
   if (!value) return undefined;
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) throw new Error("News date is invalid.");
+  if (!Number.isFinite(timestamp)) {
+    throw new AppError("VALIDATION_ERROR", "News date is invalid.");
+  }
   return new Date(timestamp).toISOString();
 }
 
@@ -180,14 +214,21 @@ function eventTypeFilter(
   value: string | null,
   earningsOnly: boolean,
 ): { readonly normalized: CorporateEventType | null; readonly providerTypes: readonly string[] } {
-  const normalized = earningsOnly
-    ? "earnings-release"
-    : (value ?? "").trim().toLowerCase();
+  if (earningsOnly) {
+    return {
+      normalized: null,
+      providerTypes: [
+        ...TMX_EVENT_TYPES["earnings-release"],
+        ...TMX_EVENT_TYPES["earnings-call"],
+      ],
+    };
+  }
+  const normalized = (value ?? "").trim().toLowerCase();
   if (!normalized || normalized === "all") {
     return { normalized: null, providerTypes: [] };
   }
   if (!hasOwnKey(TMX_EVENT_TYPES, normalized)) {
-    throw new Error("Event type is invalid.");
+    throw new AppError("VALIDATION_ERROR", "Event type is invalid.");
   }
   return { normalized, providerTypes: TMX_EVENT_TYPES[normalized] };
 }
@@ -211,6 +252,202 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
   return result;
+}
+
+interface WatchlistSecurityContext {
+  readonly snapshot: Snapshot;
+  readonly details: TickerDetails | null;
+  readonly bars: readonly AggregateBar[];
+  readonly intradayBars?: readonly AggregateBar[];
+  readonly options: OptionChainBundle | null;
+}
+
+interface ScannerSecurityContext extends Omit<WatchlistSecurityContext, "details"> {
+  readonly details: TickerDetails;
+}
+
+function completedAverageVolume(bars: readonly AggregateBar[]): number | null {
+  const completed = bars.slice(-21, -1).map((bar) => bar.volume).filter((value) => Number.isFinite(value) && value >= 0);
+  if (completed.length < 5) return null;
+  return completed.reduce((sum, value) => sum + value, 0) / completed.length;
+}
+
+function watchlistQuote(
+  context: WatchlistSecurityContext,
+  articles: readonly NewsArticle[],
+  events: EventsResearchBundle["events"],
+  source: string,
+  staleAfterMs: number | null,
+): WatchlistQuote {
+  const { snapshot, details, bars, options } = context;
+  const quote = snapshot.quote;
+  const averageVolume = quote.averageVolume ?? completedAverageVolume(bars);
+  const dailyRvol = quote.volume !== null && averageVolume !== null && averageVolume > 0
+    ? relativeVolume(quote.volume, averageVolume)
+    : null;
+  const matchingNews = articles.find((article) => article.tickers.includes(snapshot.symbol)) ?? null;
+  const matchingEvent = events
+    .filter((event) => event.symbol === snapshot.symbol && Date.parse(event.startsAt) >= Date.now())
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt))[0] ?? null;
+  const optionObservations = options
+    ? findUnusualOptionActivity(options.contracts, { minimumVolume: 100, minimumVolumeToOpenInterest: 1.5 })
+    : [];
+  const topOption = optionObservations[0] ?? null;
+
+  return {
+    ticker: snapshot.symbol,
+    companyName: details?.name || null,
+    price: quote.lastPrice,
+    change: quote.change,
+    changePercent: quote.changePercent,
+    bid: quote.bidPrice,
+    ask: quote.askPrice,
+    dayHigh: quote.high,
+    dayLow: quote.low,
+    previousClose: quote.previousClose,
+    volume: quote.volume,
+    averageVolume,
+    dailyRvol,
+    // Like-for-like intraday history is not fetched by this bounded watchlist request.
+    intradayRvol: null,
+    vwap: quote.vwap,
+    distanceFromVwapPercent: quote.lastPrice !== null && quote.vwap !== null && quote.vwap !== 0
+      ? ((quote.lastPrice - quote.vwap) / Math.abs(quote.vwap)) * 100
+      : null,
+    marketCap: details?.marketCap ?? quote.marketCap,
+    latestNews: matchingNews ? {
+      id: matchingNews.id,
+      title: matchingNews.title,
+      publishedAt: matchingNews.publishedAt,
+      articleUrl: matchingNews.articleUrl,
+      publisher: matchingNews.publisher.name,
+    } : null,
+    nextEvent: matchingEvent ? {
+      id: matchingEvent.id,
+      type: matchingEvent.type,
+      status: matchingEvent.status,
+      title: matchingEvent.title,
+      startsAt: matchingEvent.startsAt,
+      daysUntil: Math.max(0, Math.ceil((Date.parse(matchingEvent.startsAt) - Date.now()) / 86_400_000)),
+    } : null,
+    optionsActivity: options && options.contracts.length > 0 ? {
+      observed: Boolean(topOption),
+      label: topOption ? "ELEVATED VOLUME / OI" : "NO ELEVATED CONTRACT",
+      highestVolumeContract: topOption?.contract.symbol ?? null,
+      volumeToOpenInterest: topOption?.volumeToOpenInterest ?? null,
+      asOf: options.asOf,
+    } : null,
+    freshness: describeFreshness({
+      quality: snapshot.quality,
+      asOf: snapshot.asOf,
+      source,
+      marketSession: quote.session,
+      staleAfterMs,
+    }),
+  };
+}
+
+async function watchlistContexts(
+  requested: readonly string[],
+  mode: "live" | "mock",
+  research: ResearchService,
+  market: StockMarketService | null,
+  historyDays = 45,
+): Promise<readonly (WatchlistSecurityContext | null)[]> {
+  const from = isoDate(addDays(new Date(), -historyDays));
+  const to = isoDate(new Date());
+  return mapWithConcurrency(requested, SCANNER_CONTEXT_CONCURRENCY, async (symbol) => {
+    try {
+      if (mode === "mock") {
+        const mockSecurity = await getMockResearchService().getSecurity(symbol, historyDays);
+        const options = await research.getOptionChain({ symbol }).catch(() => null);
+        return { ...mockSecurity, options };
+      }
+      if (!market) return null;
+      const snapshot = await market.getSnapshot(symbol);
+      const [details, bars, options] = await Promise.all([
+        market.getTickerDetails(symbol).catch(() => null),
+        market.getAggregateBars({ symbol, multiplier: 1, timespan: "day", from, to, adjusted: true, sort: "asc", limit: Math.min(MAX_UPSTREAM_BARS, historyDays + 5) }).catch(() => []),
+        research.getOptionChain({ symbol }).catch(() => null),
+      ]);
+      return { snapshot, details, bars, options };
+    } catch {
+      return null;
+    }
+  });
+}
+
+interface ScannerSecurityContextResult {
+  readonly symbol: string;
+  readonly context: ScannerSecurityContext | null;
+  readonly optionsSucceeded: boolean;
+  readonly failures: readonly string[];
+}
+
+async function scannerContextResults(
+  requested: readonly string[],
+  mode: "live" | "mock",
+  research: ResearchService,
+  market: StockMarketService | null,
+  historyDays: number,
+): Promise<readonly ScannerSecurityContextResult[]> {
+  const from = isoDate(addDays(new Date(), -historyDays));
+  const intradayFrom = isoDate(addDays(new Date(), -SCANNER_INTRADAY_HISTORY_DAYS));
+  const to = isoDate(new Date());
+  return mapWithConcurrency(requested, SCANNER_CONTEXT_CONCURRENCY, async (symbol): Promise<ScannerSecurityContextResult> => {
+    const securityPromise: Promise<SecurityResearchBundle> = mode === "mock"
+      ? getMockResearchService().getSecurity(symbol, historyDays)
+      : market
+        ? Promise.all([
+            market.getSnapshot(symbol),
+            market.getTickerDetails(symbol),
+            market.getAggregateBars({
+              symbol,
+              multiplier: 1,
+              timespan: "day",
+              from,
+              to,
+              adjusted: true,
+              sort: "asc",
+              limit: Math.min(MAX_UPSTREAM_BARS, historyDays + 5),
+            }),
+          ]).then(([snapshot, details, bars]) => ({ snapshot, details, bars }))
+        : Promise.reject(new Error("Stock market context is unavailable."));
+    const intradayPromise: Promise<readonly AggregateBar[]> = mode === "mock"
+      ? Promise.resolve([])
+      : market
+        ? market.getAggregateBars({
+            symbol,
+            multiplier: 5,
+            timespan: "minute",
+            from: intradayFrom,
+            to,
+            adjusted: true,
+            sort: "asc",
+            limit: MAX_UPSTREAM_BARS,
+          })
+        : Promise.reject(new Error("Intraday stock context is unavailable."));
+    const [securityResult, intradayResult, optionsResult] = await Promise.allSettled([
+      securityPromise,
+      intradayPromise,
+      research.getOptionChain({ symbol }),
+    ]);
+    const failures = [
+      securityResult.status === "rejected" ? `${symbol}: stock context unavailable` : null,
+      intradayResult.status === "rejected" ? `${symbol}: intraday RVOL context unavailable` : null,
+      optionsResult.status === "rejected" ? `${symbol}: options context unavailable` : null,
+    ].filter((message): message is string => message !== null);
+    return {
+      symbol,
+      context: securityResult.status === "fulfilled" ? {
+        ...securityResult.value,
+        intradayBars: intradayResult.status === "fulfilled" ? intradayResult.value : [],
+        options: optionsResult.status === "fulfilled" ? optionsResult.value : null,
+      } : null,
+      optionsSucceeded: optionsResult.status === "fulfilled",
+      failures,
+    };
+  });
 }
 
 function upstreamBarLimit(
@@ -361,7 +598,13 @@ export async function GET(request: NextRequest) {
     const environment = getServerEnv();
     const mode = environment.USE_MOCK_DATA ? "mock" as const : "live" as const;
     const kind = request.nextUrl.searchParams.get("kind")?.toLowerCase() ?? "dashboard";
-    const symbol = ticker(request.nextUrl.searchParams.get("ticker"));
+    const tickerParameter = request.nextUrl.searchParams.get("ticker");
+    const allSymbolsRequested = request.nextUrl.searchParams.get("all") === "true";
+    const tickerRequired = ["security", "chart", "options", "financials", "timeline"].includes(kind)
+      || (["news", "events", "earnings"].includes(kind) && !allSymbolsRequested);
+    // Symbol-specific endpoints fail closed when `ticker` is absent. This avoids
+    // a stale caller accidentally receiving NVDA data for another requested name.
+    const symbol = ticker(tickerParameter, tickerRequired ? undefined : "NVDA");
     const mock = getMockResearchService();
     const live = mode === "live" ? getMassiveResearchService() : null;
     const market = mode === "live" ? getMassiveMarketDataService() : null;
@@ -389,6 +632,22 @@ export async function GET(request: NextRequest) {
           ]);
           data = { snapshot, details, bars };
         }
+        if (kind === "security") {
+          const averageVolume = completedAverageVolume(
+            data.bars.filter((bar) => bar.interval === "1D"),
+          );
+          data = {
+            ...data,
+            snapshot: {
+              ...data.snapshot,
+              quote: {
+                ...data.snapshot.quote,
+                averageVolume: data.snapshot.quote.averageVolume ?? averageVolume,
+                marketCap: data.snapshot.quote.marketCap ?? data.details.marketCap,
+              },
+            },
+          };
+        }
         return response(data, {
           mode,
           source: mode === "mock" ? "mock" : "massive",
@@ -410,10 +669,70 @@ export async function GET(request: NextRequest) {
       }
       case "watchlist": {
         const requested = symbols(request.nextUrl.searchParams.get("symbols"), ["NVDA", "AAPL", "MSFT", "AMD", "AVGO", "META", "PLTR", "TSLA"]);
-        const snapshots = mode === "mock" ? await mock.getSnapshots(requested) : await live!.getSnapshots(requested);
-        return response({ name: "CORE", symbols: requested, snapshots }, {
+        const research: ResearchService = mode === "mock" ? mock : live!;
+        const eventFrom = isoDate(new Date());
+        const eventTo = isoDate(addDays(new Date(), 45));
+        const [snapshots, contexts, newsResult, eventsResult] = await Promise.all([
+          research.getSnapshots(requested),
+          watchlistContexts(requested, mode, research, market),
+          (mode === "mock"
+            ? mock.getBenzingaNews({ limit: 200 }).then((bundle) => ({ bundle, source: "mock" as const, note: null }))
+            : getLiveNewsWithFallback(live!, market!, { limit: 200 })
+          ).catch(() => null),
+          research.getCorporateEvents({ from: eventFrom, to: eventTo, limit: 300 }).catch(() => null),
+        ]);
+        // Broad feeds can omit a watchlist name simply because it falls outside
+        // the provider page limit. Fill only missing symbols with bounded,
+        // ticker-specific queries so NEWS/EVENT badges are relevant.
+        const broadArticles = newsResult?.bundle.articles ?? [];
+        const missingNewsSymbols = requested
+          .filter((item) => !broadArticles.some((article) => article.tickers.includes(item)))
+          .slice(0, 12);
+        const broadEvents = eventsResult?.events ?? [];
+        const missingEventSymbols = requested
+          .filter((item) => !broadEvents.some((event) => event.symbol === item))
+          .slice(0, 12);
+        const [targetedNews, targetedEvents] = await Promise.all([
+          Promise.all(missingNewsSymbols.map((item) => (
+            mode === "mock"
+              ? mock.getBenzingaNews({ ticker: item, limit: 20 }).then((bundle) => ({ bundle, source: "mock" as const, note: null }))
+              : getLiveNewsWithFallback(live!, market!, { ticker: item, limit: 20 })
+          ).catch(() => null))),
+          Promise.all(missingEventSymbols.map((item) => research.getCorporateEvents({
+            ticker: item,
+            from: eventFrom,
+            to: eventTo,
+            limit: 50,
+          }).catch(() => null))),
+        ]);
+        const articles = dedupeNewsArticles([
+          ...broadArticles,
+          ...targetedNews.flatMap((result) => result?.bundle.articles ?? []),
+        ]);
+        const events = eventsResult
+          ? mergeEventBundles([eventsResult, ...targetedEvents.filter((result): result is EventsResearchBundle => result !== null)])
+              .events
+          : dedupeCorporateEvents(targetedEvents.flatMap((result) => result?.events ?? []));
+        const newsSource = newsResult?.source
+          ?? targetedNews.find((result) => result !== null)?.source
+          ?? null;
+        const hasOptions = contexts.some((context) => context?.options !== null && context?.options !== undefined);
+        const source = mode === "mock"
+          ? "mock"
+          : ["massive", newsSource, eventsResult || targetedEvents.some(Boolean) ? "tmx" : null, hasOptions ? "options developer" : null]
+              .filter((value): value is string => Boolean(value)).join(" + ");
+        const quotes = contexts.flatMap((context) => context
+          ? [watchlistQuote(
+              context,
+              articles,
+              events,
+              source,
+              mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+            )]
+          : []);
+        return response({ name: "CORE", symbols: requested, snapshots, quotes }, {
           mode,
-          source: mode === "mock" ? "mock" : "massive",
+          source,
           quality: snapshots[0]?.quality,
           asOf: snapshots[0]?.asOf,
           staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
@@ -460,11 +779,143 @@ export async function GET(request: NextRequest) {
           staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
         });
       }
+      case "scanner-context": {
+        const selectedUniverse = symbols(
+          request.nextUrl.searchParams.get("symbols"),
+          DEFAULT_RESEARCH_UNIVERSE.slice(0, 8),
+          501,
+        );
+        const requested = selectedUniverse.slice(0, SCANNER_CONTEXT_SAFETY_LIMIT);
+        const research: ResearchService = mode === "mock" ? mock : live!;
+        const now = new Date();
+        const eventFrom = isoDate(now);
+        const eventTo = isoDate(addDays(now, 45));
+        const [contextResults, newsResult, eventsResult] = await Promise.all([
+          scannerContextResults(requested, mode, research, market, 366),
+          (mode === "mock"
+            ? mock.getBenzingaNews({ limit: 500 }).then((bundle) => ({ bundle, source: "mock" as const, note: null }))
+            : getLiveNewsWithFallback(live!, market!, { limit: 500 })
+          ).catch(() => null),
+          research.getCorporateEvents({ from: eventFrom, to: eventTo, limit: 500 }).catch(() => null),
+        ]);
+        const broadArticles = newsResult?.bundle.articles ?? [];
+        const broadEvents = eventsResult?.events ?? [];
+        const missingNewsSymbols = requested
+          .filter((item) => !broadArticles.some((article) => article.tickers.includes(item)));
+        const missingEventSymbols = requested
+          .filter((item) => !broadEvents.some((event) => event.symbol === item));
+        const [targetedNews, targetedEvents] = await Promise.all([
+          mapWithConcurrency(missingNewsSymbols, SCANNER_CONTEXT_CONCURRENCY, (item) => (
+            mode === "mock"
+              ? mock.getBenzingaNews({ ticker: item, limit: 20 }).then((bundle) => ({ bundle, source: "mock" as const, note: null }))
+              : getLiveNewsWithFallback(live!, market!, { ticker: item, limit: 20 })
+          ).catch(() => null)),
+          mapWithConcurrency(missingEventSymbols, SCANNER_CONTEXT_CONCURRENCY, (item) => research.getCorporateEvents({
+            ticker: item,
+            from: eventFrom,
+            to: eventTo,
+            limit: 50,
+          }).catch(() => null)),
+        ]);
+        const targetedNewsBySymbol = new Map(missingNewsSymbols.map((item, index) => [item, targetedNews[index]]));
+        const targetedEventsBySymbol = new Map(missingEventSymbols.map((item, index) => [item, targetedEvents[index]]));
+        const articles = dedupeNewsArticles([
+          ...broadArticles,
+          ...targetedNews.flatMap((result) => result?.bundle.articles ?? []),
+        ]);
+        const events = dedupeCorporateEvents([
+          ...broadEvents,
+          ...targetedEvents.flatMap((result) => result?.events ?? []),
+        ]);
+        const newsSource = newsResult?.source
+          ?? targetedNews.find((result) => result !== null)?.source
+          ?? null;
+        const eventsSourceAvailable = eventsResult !== null || targetedEvents.some((result) => result !== null);
+        const newsAvailableFor = (item: string) => broadArticles.some((article) => article.tickers.includes(item))
+          || (targetedNewsBySymbol.has(item) && targetedNewsBySymbol.get(item) !== null);
+        const eventsAvailableFor = (item: string) => broadEvents.some((event) => event.symbol === item)
+          || (targetedEventsBySymbol.has(item) && targetedEventsBySymbol.get(item) !== null);
+        const evaluationTime = new Date().toISOString();
+        const optionsAvailable = contextResults.some((result) => result.optionsSucceeded);
+        const stocksAvailable = contextResults.some((result) => result.context !== null);
+        const source = mode === "mock"
+          ? "mock"
+          : [
+              stocksAvailable ? "massive stocks" : null,
+              newsSource,
+              eventsSourceAvailable ? "tmx events" : null,
+              optionsAvailable ? "options developer" : null,
+            ].filter((value): value is string => Boolean(value)).join(" + ") || "scanner sources unavailable";
+        const rows = contextResults.flatMap((result) => result.context ? [buildScannerContextRow({
+          snapshot: result.context.snapshot,
+          details: result.context.details,
+          bars: result.context.bars,
+          intradayBars: result.context.intradayBars ?? [],
+          news: articles,
+          events,
+          optionChain: result.context.options,
+          freshness: describeFreshness({
+            quality: result.context.snapshot.quality,
+            asOf: result.context.snapshot.asOf,
+            source: mode === "mock" ? "mock" : [
+              "massive stocks",
+              newsAvailableFor(result.symbol) ? newsSource : null,
+              eventsAvailableFor(result.symbol) ? "tmx events" : null,
+              result.optionsSucceeded ? "options developer" : null,
+            ].filter((value): value is string => Boolean(value)).join(" + "),
+            marketSession: result.context.snapshot.quote.session,
+            staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+          }),
+          now: evaluationTime,
+          newsAvailable: newsAvailableFor(result.symbol),
+          eventsAvailable: eventsAvailableFor(result.symbol),
+        })] : []);
+        const partialFailures = [
+          ...(selectedUniverse.length > requested.length
+            ? [`Scanner processed ${requested.length}/${selectedUniverse.length} selected symbols because cross-source requests have a ${SCANNER_CONTEXT_SAFETY_LIMIT}-symbol safety limit.`]
+            : []),
+          ...contextResults.flatMap((result) => result.failures),
+          ...missingNewsSymbols.flatMap((item, index) => targetedNews[index] === null
+            ? [`${item}: ticker-specific news fill unavailable`]
+            : []),
+          ...missingEventSymbols.flatMap((item, index) => targetedEvents[index] === null
+            ? [`${item}: ticker-specific corporate-event fill unavailable`]
+            : []),
+          ...(newsResult?.note ? requested.map((item) => `${item}: ${newsResult.note}`) : []),
+          ...missingNewsSymbols.flatMap((item, index) => targetedNews[index]?.note
+            ? [`${item}: ${targetedNews[index]?.note}`]
+            : []),
+        ];
+        const data: ScannerContextBundle = {
+          universe: selectedUniverse,
+          rows,
+          scope: "SELECTED WATCHLIST CROSS-SOURCE RESEARCH UNIVERSE",
+          evaluationTime,
+          partialFailures,
+          universeCoverage: {
+            requestedCount: selectedUniverse.length,
+            processedCount: requested.length,
+            returnedCount: rows.length,
+            safetyLimit: SCANNER_CONTEXT_SAFETY_LIMIT,
+            truncated: selectedUniverse.length > requested.length,
+          },
+        };
+        const firstContext = contextResults.find((result) => result.context !== null)?.context ?? null;
+        return response(data, {
+          mode,
+          source,
+          quality: firstContext?.snapshot.quality,
+          asOf: evaluationTime,
+          marketSession: firstContext?.snapshot.quote.session,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_QUOTE_MS * 3 : null,
+        });
+      }
       case "news": {
         const tickerFilter = request.nextUrl.searchParams.get("all") === "true" ? undefined : symbol;
         const query = {
           ticker: tickerFilter,
           publishedAfter: isoTimestamp(request.nextUrl.searchParams.get("after")),
+          publishedBefore: isoTimestamp(request.nextUrl.searchParams.get("before")),
           category: newsCategory(request.nextUrl.searchParams.get("category")),
           keyword: request.nextUrl.searchParams.get("q") ?? undefined,
         };
@@ -577,6 +1028,7 @@ export async function GET(request: NextRequest) {
               })),
               mock.getCorporateEvents({ ticker: symbol, from, to }),
               mock.getSecurity(symbol, 100),
+              mock.getOptionChain({ symbol }),
             ] as const
           : [
               getLiveNewsWithFallback(live!, market!, { ticker: symbol, publishedAfter: `${from}T00:00:00Z`, limit: 200 }),
@@ -586,20 +1038,25 @@ export async function GET(request: NextRequest) {
                 market!.getTickerDetails(symbol),
                 market!.getAggregateBars({ symbol, multiplier: 1, timespan: "day", from, to: isoDate(now), adjusted: true, sort: "asc", limit: 500 }),
               ]).then(([snapshot, details, bars]) => ({ snapshot, details, bars })),
+              live!.getOptionChain({ symbol }),
             ] as const);
-        const [newsResult, eventsResult, securityResult] = results;
+        const [newsResult, eventsResult, securityResult, optionsResult] = results;
         const notes = [
           newsResult.status === "rejected" ? "Market news is unavailable for this timeline." : newsResult.value.note,
           eventsResult.status === "rejected" ? "TMX events are unavailable for this timeline." : null,
           securityResult.status === "rejected" ? "Price-move history is unavailable for this timeline." : null,
+          optionsResult.status === "rejected" ? "Options activity observations are unavailable for this timeline." : null,
         ].filter((note): note is string => note !== null);
         const newsArticles = newsResult.status === "fulfilled" ? newsResult.value.bundle.articles : [];
         const corporateEvents = eventsResult.status === "fulfilled" ? eventsResult.value.events : [];
         const priceBars = securityResult.status === "fulfilled" ? securityResult.value.bars : [];
+        const optionChain = optionsResult.status === "fulfilled" ? optionsResult.value : null;
         const entries: CatalystTimelineEntry[] = [
           ...newsArticles.map((article) => ({ id: article.id, at: article.publishedAt, symbol, kind: "news" as const, title: article.title, detail: article.summary, url: article.articleUrl })),
           ...corporateEvents.map((event) => ({ id: event.id, at: event.startsAt, symbol, kind: "event" as const, title: event.title, detail: event.description, url: event.eventUrl })),
           ...priceMoveEntries(symbol, priceBars),
+          ...volumeSpikeTimelineEntries(symbol, priceBars),
+          ...optionsActivityTimelineEntries(symbol, optionChain),
         ].sort((a, b) => a.at.localeCompare(b.at));
         const sources = mode === "mock"
           ? "mock"
@@ -607,6 +1064,7 @@ export async function GET(request: NextRequest) {
               securityResult.status === "fulfilled" ? "massive" : null,
               newsResult.status === "fulfilled" ? newsResult.value.source : null,
               eventsResult.status === "fulfilled" ? "tmx" : null,
+              optionsResult.status === "fulfilled" ? "options developer" : null,
             ].filter((source): source is string => source !== null).join(" + ") || "timeline sources unavailable";
         return response({
           symbol,
@@ -615,6 +1073,8 @@ export async function GET(request: NextRequest) {
             news: newsResult.status === "fulfilled",
             events: eventsResult.status === "fulfilled",
             priceMoves: securityResult.status === "fulfilled",
+            volumeSpikes: securityResult.status === "fulfilled",
+            optionsActivity: optionsResult.status === "fulfilled",
             notes,
           },
         }, { mode, source: sources, quality: mode === "mock" ? "indicative" : "unknown", asOf: new Date().toISOString() });

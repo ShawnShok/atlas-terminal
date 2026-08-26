@@ -11,6 +11,7 @@ export interface StockDataStatus {
 }
 
 export type PriceSeriesType = "candlestick" | "line" | "area";
+export type ChartPriceScaleMode = "linear" | "logarithmic";
 
 export type ChartTimeframe =
   | "1D"
@@ -58,15 +59,56 @@ export interface ChartDisplaySettings {
   readonly seriesType: PriceSeriesType;
   readonly volumeVisible: boolean;
   readonly activeIndicators: readonly ChartIndicatorId[];
+  /** Optional for backward compatibility with saved chart settings. */
+  readonly priceScaleMode?: ChartPriceScaleMode;
+  /** Effective only when every supplied bar has usable session classification. */
+  readonly includeExtendedHours?: boolean;
 }
 
 export type WatchlistSortKey =
   | "symbol"
+  | "companyName"
   | "lastPrice"
+  | "change"
   | "changePercent"
+  | "bid"
+  | "ask"
+  | "dayHigh"
+  | "dayLow"
+  | "previousClose"
   | "volume"
+  | "averageVolume"
   | "relativeVolume"
-  | "marketCap";
+  | "intradayRvol"
+  | "marketCap"
+  | "vwap"
+  | "distanceFromVwapPercent"
+  | "latestNewsAt"
+  | "nextEventAt"
+  | "daysUntilEvent"
+  | "optionsActivity"
+  | "freshness";
+
+export type WatchlistColumnId =
+  | "ticker"
+  | "companyName"
+  | "price"
+  | "change"
+  | "changePercent"
+  | "bidAsk"
+  | "dayRange"
+  | "previousClose"
+  | "volume"
+  | "averageVolume"
+  | "dailyRvol"
+  | "intradayRvol"
+  | "marketCap"
+  | "vwap"
+  | "distanceFromVwap"
+  | "latestNews"
+  | "nextEvent"
+  | "optionsActivity"
+  | "freshness";
 
 export type MarketMoverSide = "gainers" | "losers";
 

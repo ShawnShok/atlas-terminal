@@ -61,10 +61,31 @@ function mergeQuality(values: readonly DataQuality[]): DataQuality {
   return values.every((value) => value === "live") ? "live" : "unknown";
 }
 
+function reportedOptionPrice(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function mergeOptionQuoteAvailability(
+  contracts: readonly OptionContract[],
+): OptionChainBundle["quoteAvailability"] {
+  const complete = contracts.filter((contract) => contract.quoteAvailability === "available").length;
+  if (complete === contracts.length && complete > 0) return "available";
+  if (complete > 0 || contracts.some((contract) => contract.quoteAvailability === "partial")) return "partial";
+  return "unavailable";
+}
+
 function humanizeKey(value: string): string {
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reportedSnapshotPrice(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function reportedSnapshotVolume(value: number | undefined): number | null {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function decodeEntities(value: string): string {
@@ -127,17 +148,19 @@ export function adaptSnapshotTicker(
   quality: DataQuality = "unknown",
 ): MarketSnapshotRow | null {
   if (!raw.ticker) return null;
+  const currentSessionReported = [raw.day?.o, raw.day?.h, raw.day?.l, raw.day?.c]
+    .some((value) => reportedSnapshotPrice(value) !== null);
   return {
     symbol: normalizeSymbol(raw.ticker),
-    lastPrice: raw.lastTrade?.p ?? raw.day?.c ?? null,
-    change: raw.todaysChange ?? null,
-    changePercent: raw.todaysChangePerc ?? null,
-    open: raw.day?.o ?? null,
-    high: raw.day?.h ?? null,
-    low: raw.day?.l ?? null,
-    previousClose: raw.prevDay?.c ?? null,
-    volume: raw.day?.v ?? null,
-    vwap: raw.day?.vw ?? null,
+    lastPrice: reportedSnapshotPrice(raw.lastTrade?.p) ?? reportedSnapshotPrice(raw.day?.c),
+    change: currentSessionReported ? raw.todaysChange ?? null : null,
+    changePercent: currentSessionReported ? raw.todaysChangePerc ?? null : null,
+    open: reportedSnapshotPrice(raw.day?.o),
+    high: reportedSnapshotPrice(raw.day?.h),
+    low: reportedSnapshotPrice(raw.day?.l),
+    previousClose: reportedSnapshotPrice(raw.prevDay?.c),
+    volume: currentSessionReported ? reportedSnapshotVolume(raw.day?.v) : null,
+    vwap: reportedSnapshotPrice(raw.day?.vw),
     asOf: toIsoTimestamp(raw.updated ?? raw.lastTrade?.t ?? raw.lastQuote?.t, fallbackAsOf),
     quality,
   };
@@ -192,10 +215,10 @@ export function adaptBenzingaNews(
     const id = `benzinga-${raw.benzinga_id}`;
     if (seen.has(id)) return [];
     seen.add(id);
-    const tags = [...(raw.channels ?? []), ...(raw.tags ?? [])];
+    const tags = [...(raw.channels ?? []), ...(raw.tags ?? [])].map(decodeEntities);
     return [{
       id,
-      title: raw.title,
+      title: decodeEntities(raw.title),
       summary: sanitizeArticleBody(raw.teaser),
       body: sanitizeArticleBody(raw.body),
       articleUrl: raw.url ?? null,
@@ -206,7 +229,7 @@ export function adaptBenzingaNews(
       categories: inferNewsCategories(tags),
       keywords: tags,
       publisher: {
-        name: raw.author ? `Benzinga · ${raw.author}` : "Benzinga",
+        name: raw.author ? `Benzinga · ${decodeEntities(raw.author)}` : "Benzinga",
         homepageUrl: "https://www.benzinga.com",
         logoUrl: null,
         faviconUrl: null,
@@ -248,6 +271,10 @@ function eventStatus(value: string | undefined): CorporateEventStatus {
       return "pending";
     case "canceled":
       return "canceled";
+    case "reschedule":
+    case "re-scheduled":
+    case "rescheduled":
+      return "rescheduled";
     case "historical":
       return "completed";
     default:
@@ -285,6 +312,7 @@ export function adaptOptionChain(
   response: MassiveOptionChainResponse,
   underlyingSymbol: string,
   selectedExpiration?: string,
+  contractsComplete = !response.next_url,
 ): OptionChainBundle {
   const fetchedAt = new Date().toISOString();
   let underlyingPrice: number | null = null;
@@ -301,7 +329,25 @@ export function adaptOptionChain(
     ) continue;
 
     underlyingPrice ??= raw.underlying_asset?.price ?? null;
-    const premium = raw.last_trade?.price ?? raw.day?.close ?? raw.last_quote?.midpoint ?? null;
+    // Snapshot midpoint is a quote-derived statistic, never a last trade. Keep
+    // the provenance explicit so downstream payoff tools cannot treat it as a
+    // supported execution premium.
+    const lastTrade = reportedOptionPrice(raw.last_trade?.price);
+    const dayClose = reportedOptionPrice(raw.day?.close);
+    const lastPrice = lastTrade ?? dayClose;
+    const lastPriceSource = lastTrade !== null
+      ? "last-trade" as const
+      : dayClose !== null
+        ? "day-close" as const
+        : "unavailable" as const;
+    const bidPrice = reportedOptionPrice(raw.last_quote?.bid);
+    const askPrice = reportedOptionPrice(raw.last_quote?.ask);
+    const hasCompleteQuote = bidPrice !== null && askPrice !== null && askPrice >= bidPrice;
+    const quoteAvailability = hasCompleteQuote
+      ? "available" as const
+      : bidPrice !== null || askPrice !== null
+        ? "partial" as const
+        : "unavailable" as const;
     const intrinsic = underlyingPrice === null
       ? null
       : details.contract_type === "call"
@@ -327,15 +373,18 @@ export function adaptOptionChain(
           ? style
           : "unknown",
       sharesPerContract: details.shares_per_contract ?? 100,
-      lastPrice: premium,
-      bidPrice: raw.last_quote?.bid ?? null,
-      askPrice: raw.last_quote?.ask ?? null,
+      sharesPerContractReported: details.shares_per_contract !== undefined,
+      lastPrice,
+      lastPriceSource,
+      bidPrice,
+      askPrice,
+      quoteAvailability,
       volume: raw.day?.volume ?? null,
       openInterest: raw.open_interest ?? null,
       impliedVolatility: raw.implied_volatility ?? null,
       intrinsicValue: intrinsic,
       extrinsicValue:
-        premium !== null && intrinsic !== null ? Math.max(0, premium - intrinsic) : null,
+        lastPrice !== null && intrinsic !== null ? Math.max(0, lastPrice - intrinsic) : null,
       greeks: {
         delta: raw.greeks?.delta ?? null,
         gamma: raw.greeks?.gamma ?? null,
@@ -350,14 +399,28 @@ export function adaptOptionChain(
   }
 
   const expirations = [...new Set(contracts.map((contract) => contract.expirationDate))].sort();
+  const quoteAvailability = mergeOptionQuoteAvailability(contracts);
+  const latestContractAsOf = contracts
+    .map((contract) => contract.asOf)
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? fetchedAt;
   return {
     underlyingSymbol: normalizeSymbol(underlyingSymbol),
     underlyingPrice,
     expirations,
     selectedExpiration: selectedExpiration ?? expirations[0] ?? null,
     contracts,
-    asOf: contracts[0]?.asOf ?? fetchedAt,
+    contractsComplete,
+    asOf: latestContractAsOf,
     quality: mergeQuality(qualities),
+    quoteAvailability,
+    quoteNote: contracts.length === 0
+      ? "NO LISTED OPTION CONTRACTS WERE RETURNED FOR THIS SYMBOL AND EXPIRATION FILTER."
+      : quoteAvailability === "available"
+      ? "Reported bid/ask snapshots are descriptive and may be delayed; they are not executable prices."
+      : quoteAvailability === "partial"
+        ? "Option quotes are incomplete or crossed. Missing bid/ask fields and invalid midpoints remain unavailable."
+        : "NO OPTION QUOTES AVAILABLE — bid, ask, and midpoint are not included in the returned entitlement data.",
   };
 }
 

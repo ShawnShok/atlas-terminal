@@ -29,25 +29,50 @@ export interface SelectOption<T extends string = string> {
   readonly label: string;
 }
 
-export type NewsScope =
-  | "all"
-  | "watchlist"
+export type NewsScope = "all" | "watchlist" | "ticker";
+
+export type NewsRecentWindow = "all" | "5" | "15" | "30" | "60" | "today";
+
+export type NewsSortKey =
+  | "publishedAt"
+  | "age"
   | "ticker"
-  | "breaking"
-  | "earnings"
-  | "analyst"
-  | "mergers-acquisitions"
-  | "fda"
-  | "guidance"
-  | "macro";
+  | "headline"
+  | "category"
+  | "source";
+
+export type NewsSortDirection = "asc" | "desc";
 
 export interface NewsFiltersValue {
   readonly scope: NewsScope;
-  readonly ticker: string;
+  /** Comma- or whitespace-separated provider-neutral ticker symbols. */
+  readonly tickers: string;
   readonly sector: string;
   readonly category: NewsCategory | "all";
-  readonly date: string;
+  readonly dateFrom: string;
+  readonly dateTo: string;
+  readonly timeFrom: string;
+  readonly timeTo: string;
+  readonly source: string;
+  readonly recent: NewsRecentWindow;
+  readonly unreadOnly: boolean;
   readonly keyword: string;
+}
+
+export interface NewsWatchlistOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface NewsAlertDraft {
+  readonly ticker: string;
+  readonly watchlistId: string;
+  readonly keyword: string;
+  readonly category: NewsCategory | "all";
+  readonly browserNotification: boolean;
+  readonly sound: boolean;
+  readonly cooldownMinutes: number;
+  readonly enabled: boolean;
 }
 
 export interface NewsFeedPropsModel {
@@ -61,16 +86,21 @@ export type EventHorizon =
   | "tomorrow"
   | "this-week"
   | "next-week"
-  | "this-month";
+  | "this-month"
+  | "custom";
 
 export interface EventFiltersValue {
   readonly horizon: EventHorizon;
   readonly watchlistOnly: boolean;
   readonly ticker: string;
   readonly type: CorporateEventType | "all";
+  readonly status: CorporateEvent["status"] | "all";
+  readonly confirmedOnly: boolean;
+  readonly earningsOnly: boolean;
   readonly marketCap: "all" | "micro" | "small" | "mid" | "large" | "mega";
   readonly sector: string;
-  readonly date: string;
+  readonly customFrom: string;
+  readonly customTo: string;
 }
 
 export interface EventCalendarDay {
@@ -85,6 +115,7 @@ export interface EventCountdown {
   readonly symbol: string;
   readonly label: string;
   readonly startsAt: string;
+  readonly allDay: boolean;
   readonly urgency: "normal" | "soon" | "imminent";
 }
 
@@ -117,16 +148,26 @@ export interface OptionChainRow {
 
 export interface OptionChainFilters {
   readonly expirationDate: string;
+  readonly contractType: "all" | OptionContract["type"];
   readonly strikeMin: number | null;
   readonly strikeMax: number | null;
   readonly minimumVolume: number | null;
   readonly minimumOpenInterest: number | null;
+  readonly minimumVolumeToOpenInterest: number | null;
+  /** User-facing percentage points, e.g. 35 means 35%. */
+  readonly impliedVolatilityMin: number | null;
+  readonly impliedVolatilityMax: number | null;
+  readonly deltaMin: number | null;
+  readonly deltaMax: number | null;
+  readonly moneyness: "all" | OptionMoneyness;
 }
 
 export interface OptionActivityMetric {
   readonly label: string;
   readonly value: number | null;
   readonly detail?: string;
+  readonly tooltip?: string;
+  readonly format?: "number" | "ratio" | "percent";
   readonly tone?: "neutral" | "positive" | "negative" | "warning";
 }
 
@@ -185,6 +226,8 @@ export type ScannerField =
   | "volume"
   | "average-volume"
   | "relative-volume"
+  | "daily-relative-volume"
+  | "intraday-relative-volume"
   | "daily-change"
   | "weekly-change"
   | "monthly-change"
@@ -192,13 +235,46 @@ export type ScannerField =
   | "ema-distance"
   | "vwap-distance"
   | "rsi"
+  | "distance-day-high"
+  | "distance-day-low"
   | "distance-52w-high"
   | "distance-52w-low"
+  | "distance-recent-high"
+  | "volume-acceleration"
+  | "new-intraday-high"
+  | "new-intraday-low"
   | "gap-percent"
+  | "price-vs-vwap"
+  | "price-vs-sma20"
+  | "price-vs-sma50"
+  | "price-vs-sma200"
+  | "price-vs-ema20"
+  | "price-vs-ema50"
+  | "price-vs-recent-high"
+  | "price-vs-recent-low"
   | "recent-news-minutes"
+  | "news-headline"
+  | "news-category"
+  | "news-keyword"
   | "event-within-days"
   | "earnings-within-days"
-  | "option-volume-oi";
+  | "confirmed-event-within-days"
+  | "investor-event-within-days"
+  | "option-volume"
+  | "option-open-interest"
+  | "option-volume-oi"
+  | "option-call-volume"
+  | "option-put-volume"
+  | "option-call-open-interest"
+  | "option-put-open-interest"
+  | "option-call-put-volume"
+  | "option-call-put-open-interest"
+  | "option-average-iv"
+  | "option-min-dte"
+  | "option-max-dte"
+  | "option-highest-contract-volume"
+  | "option-highest-contract-open-interest"
+  | "option-volume-relative-underlying";
 
 export type ScannerOperator =
   | "greater-than"
@@ -239,6 +315,20 @@ export interface ScannerResult {
   readonly nextEventAt: string | null;
   readonly nextEventLabel: string | null;
   readonly optionActivityScore: number | null;
+  readonly vwapDistancePercent?: number | null;
+  readonly latestNewsTitle?: string | null;
+  readonly newsAgeMinutes?: number | null;
+  readonly nextEventStatus?: string | null;
+  readonly researchPriority?: number | null;
+  readonly researchPriorityCoverage?: number | null;
+  readonly scoreBreakdown?: readonly {
+    readonly label: string;
+    readonly available: boolean;
+    readonly points: number;
+    readonly weight: number;
+    readonly explanation: string;
+  }[];
+  readonly lastUpdatedAt?: string | null;
   readonly matchedConditions: readonly string[];
 }
 
@@ -286,7 +376,17 @@ export interface CatalystTimelineItem {
   readonly id: string;
   readonly symbol: string;
   readonly occurredAt: string;
-  readonly type: "news" | "event" | "earnings" | "filing" | "analyst" | "other";
+  readonly type:
+    | "news"
+    | "event"
+    | "price-move"
+    | "volume-spike"
+    | "options-activity"
+    | "note"
+    | "earnings"
+    | "filing"
+    | "analyst"
+    | "other";
   readonly title: string;
   readonly description: string | null;
   readonly sourceLabel: string;

@@ -39,6 +39,7 @@ const {
   createCommandParser,
   isTickerSymbol,
   normalizeCommandInput,
+  parseAtlasCommand,
   parseCommand,
   parseCommandIntent,
   rankCommandSuggestions,
@@ -77,6 +78,7 @@ test("parses every supported ticker command", () => {
     ["AMD OPT", "options"],
     ["META FIN", "financials"],
     ["PLTR EVENTS", "events"],
+    ["NVDA OVERVIEW", "security"],
   ];
 
   for (const [input, kind] of cases) {
@@ -93,6 +95,8 @@ test("parses every supported exact page command", () => {
   const cases = [
     ["MARKET", "market"],
     ["MOVERS", "movers"],
+    ["NEWS", "news"],
+    ["EVENTS", "events"],
     ["SCAN", "scanner"],
     ["WATCH", "watchlist"],
     ["EARNINGS", "earnings"],
@@ -116,10 +120,32 @@ test("parses a bounded, normalized COMPARE ticker list", () => {
 
 test("rejects partial commands and extra arguments", () => {
   expectError("CHART", "MISSING_TICKER");
-  expectError("NEWS NVDA", "MISSING_TICKER");
+  expectError("NEWS NVDA", "UNEXPECTED_ARGUMENTS");
   expectError("MARKET AAPL", "UNEXPECTED_ARGUMENTS");
   expectError("AAPL NEWS NOW", "UNEXPECTED_ARGUMENTS");
   expectError("AAPL QUOTE", "UNKNOWN_COMMAND");
+});
+
+test("parses named watchlists and bounded scanner presets", () => {
+  assert.deepEqual(parseAtlasCommand(" watch core "), {
+    ok: true,
+    intent: {
+      kind: "watchlist",
+      watchlistName: "CORE",
+      normalizedInput: "WATCH CORE",
+    },
+  });
+  assert.deepEqual(parseAtlasCommand("scan news movers"), {
+    ok: true,
+    intent: {
+      kind: "scanner",
+      scannerPresetId: "news-movers",
+      scannerPresetName: "NEWS MOVERS",
+      normalizedInput: "SCAN NEWS MOVERS",
+    },
+  });
+  assert.equal(parseAtlasCommand("SCAN GUARANTEED RETURNS").ok, false);
+  assert.equal(parseAtlasCommand("WATCH <SCRIPT>").ok, false);
 });
 
 test("rejects malformed ticker syntax and reserved words as tickers", () => {

@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   HomeDashboard,
   MarketMovers,
   StockTerminal,
+  TickerOverviewIntelligence,
   TickerSearch,
   Watchlist,
   type TickerSearchProps,
+  type WatchlistResearchSelect,
 } from "@/components/stocks";
 import { useResearchData } from "@/hooks/useResearchData";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useWatchlists } from "@/hooks/useWatchlists";
 import {
   averageTrueRange,
   bollingerBands,
@@ -22,6 +25,7 @@ import {
   simpleMovingAverage,
 } from "@/lib/indicators";
 import {
+  MAX_WATCHLIST_SYMBOLS,
   type ChartDisplaySettings,
   type ChartIndicatorSeries,
   type ChartInterval,
@@ -32,14 +36,18 @@ import {
 } from "@/lib/stocks";
 import type {
   CorporateEvent,
+  EventsResearchBundle,
   MarketMovers as MarketMoversData,
   MarketSnapshotRow,
   NewsArticle,
+  NewsResearchBundle,
+  OptionChainBundle,
   SecurityResearchBundle,
   TerminalApiMeta,
   TickerSearchResult,
   WatchlistResearchBundle,
 } from "@/types";
+import type { WorkspaceCommandTarget } from "@/lib/workspace/model";
 
 import { DataState, FreshnessStrip } from "./DataState";
 
@@ -187,16 +195,16 @@ export function LiveStockPanel({
   ticker,
   view,
   onTickerSelect,
-  onViewChange,
+  onFindSimilar,
 }: {
   ticker: string;
   view: "overview" | "chart";
   onTickerSelect: (ticker: string) => void;
-  onViewChange: (view: "overview" | "chart") => void;
+  onFindSimilar?: (ticker: string) => void;
 }) {
   const [settings, setSettings] = useState<ChartDisplaySettings>(() => ({
     ...DEFAULT_CHART_SETTINGS,
-    timeframe: view === "chart" ? "1Y" : "6M",
+    timeframe: "1Y",
     interval: "1D",
   }));
   const result = useResearchData<SecurityResearchBundle>(view === "chart" ? "chart" : "security", {
@@ -204,6 +212,28 @@ export function LiveStockPanel({
     range: settings.timeframe,
     interval: settings.interval,
   }, { refreshMs: view === "chart" && settings.timeframe === "1D" ? 15_000 : 60_000 });
+  const overviewEnabled = view === "overview";
+  const news = useResearchData<NewsResearchBundle>("news", { ticker }, {
+    enabled: overviewEnabled,
+    refreshMs: 60_000,
+    retainMs: 30_000,
+  });
+  const eventRange = useMemo(() => {
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 60);
+    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  }, []);
+  const events = useResearchData<EventsResearchBundle>("events", { ticker, ...eventRange }, {
+    enabled: overviewEnabled,
+    refreshMs: 15 * 60_000,
+    retainMs: 5 * 60_000,
+  });
+  const options = useResearchData<OptionChainBundle>("options", { ticker }, {
+    enabled: overviewEnabled,
+    refreshMs: 60_000,
+    retainMs: 30_000,
+  });
   const search = useTickerSearch(onTickerSelect);
   return (
     <StockTerminal
@@ -213,7 +243,16 @@ export function LiveStockPanel({
       chartSettings={settings}
       indicatorSeries={useMemo(() => indicatorSeries(result.data), [result.data])}
       search={search}
-      onViewChange={onViewChange}
+      overviewIntelligence={result.data ? (
+        <TickerOverviewIntelligence
+          security={result.data}
+          news={news.data?.articles}
+          events={events.data?.events}
+          optionChain={options.data}
+          referenceTime={result.meta?.asOf ?? result.data.snapshot.asOf}
+          onFindSimilar={onFindSimilar}
+        />
+      ) : null}
       onChartSettingsChange={(next) => setSettings(normalizeChartSettings(next))}
     />
   );
@@ -236,13 +275,45 @@ export function LiveMoversPanel({ onTickerSelect }: { onTickerSelect: (ticker: s
   );
 }
 
-export function LiveWatchlistPanel({ onTickerSelect }: { onTickerSelect: (ticker: string) => void }) {
-  const [symbols, setSymbols] = useState<readonly string[]>(CORE_SYMBOLS);
+export function LiveWatchlistPanel({
+  commandTarget,
+  onTickerSelect,
+  onResearchSelect,
+}: {
+  commandTarget?: WorkspaceCommandTarget | null;
+  onTickerSelect: (ticker: string) => void;
+  onResearchSelect?: WatchlistResearchSelect;
+}) {
+  const watchlists = useWatchlists();
+  const watchlistOptions = watchlists.lists;
+  const selectedWatchlistId = watchlists.selectedId;
+  const selectWatchlist = watchlists.setSelectedId;
+  const [symbolDraft, setSymbolDraft] = useState("");
   const [sortKey, setSortKey] = useState<WatchlistSortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<"ascending" | "descending">("descending");
   const [selected, setSelected] = useState<string | null>(null);
-  const result = useResearchData<WatchlistResearchBundle>("watchlist", { symbols: symbols.join(",") }, { refreshMs: 20_000 });
-  const bundle = result.data ? { ...result.data, symbols } : null;
+  useEffect(() => {
+    if (!commandTarget?.watchlistName) return;
+    const requested = watchlistOptions.find((list) => list.name.toUpperCase() === commandTarget.watchlistName);
+    if (!requested || requested.id === selectedWatchlistId) return;
+    const timer = window.setTimeout(() => {
+      selectWatchlist(requested.id);
+      setSortKey(null);
+      setSelected(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [commandTarget, selectedWatchlistId, selectWatchlist, watchlistOptions]);
+  const symbols = watchlists.selected?.tickers.map((ticker) => ticker.symbol) ?? [];
+  const result = useResearchData<WatchlistResearchBundle>("watchlist", { symbols: symbols.join(",") }, {
+    enabled: symbols.length > 0,
+    refreshMs: 60_000,
+    retainMs: 30_000,
+  });
+  const bundle: WatchlistResearchBundle | null = watchlists.selected
+    ? result.data
+      ? { ...result.data, name: watchlists.selected.name, symbols }
+      : { name: watchlists.selected.name, symbols, snapshots: [], quotes: [] }
+    : null;
   const handleSort = (key: WatchlistSortKey) => {
     if (sortKey === key) setSortDirection((current) => current === "ascending" ? "descending" : "ascending");
     else {
@@ -254,23 +325,87 @@ export function LiveWatchlistPanel({ onTickerSelect }: { onTickerSelect: (ticker
     setSelected(symbol);
     onTickerSelect(symbol);
   };
+  const addSymbol = () => {
+    const normalized = symbolDraft.trim().toUpperCase();
+    if (!watchlists.selected || !/^[A-Z][A-Z0-9.-]{0,14}$/.test(normalized)) return;
+    if (symbols.includes(normalized)) {
+      setSelected(normalized);
+      setSymbolDraft("");
+      return;
+    }
+    if (symbols.length >= MAX_WATCHLIST_SYMBOLS) return;
+    void watchlists.setSymbols(watchlists.selected.id, [...symbols, normalized]);
+    setSymbolDraft("");
+    setSortKey(null);
+  };
   return (
     <div className="live-stock-module">
       <FreshnessStrip meta={result.meta} refreshing={result.refreshing} />
-      <div className="session-only-note">CORE is a session watchlist in this deployment. Durable lists, additions, and saved ordering activate when PostgreSQL is configured.</div>
+      <div className="watchlist-command-bar">
+        <label>
+          <span>WATCHLIST</span>
+          <select
+            value={watchlists.selectedId}
+            onChange={(event) => {
+              watchlists.setSelectedId(event.target.value);
+              setSortKey(null);
+              setSelected(null);
+            }}
+            disabled={watchlists.busy || watchlists.lists.length === 0}
+          >
+            {watchlists.lists.map((list) => (
+              <option value={list.id} key={list.id}>{list.name}{watchlists.defaultId === list.id ? " · DEFAULT" : ""}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" disabled={watchlists.busy} onClick={() => {
+          const name = window.prompt("New watchlist name", "MOMENTUM");
+          if (name) void watchlists.create(name);
+        }}>NEW</button>
+        <button type="button" disabled={watchlists.busy || !watchlists.selected} onClick={() => {
+          if (!watchlists.selected) return;
+          const name = window.prompt("Rename watchlist", watchlists.selected.name);
+          if (name && name.trim() !== watchlists.selected.name) void watchlists.rename(watchlists.selected.id, name);
+        }}>RENAME</button>
+        <button type="button" disabled={watchlists.busy || !watchlists.selected || watchlists.defaultId === watchlists.selected.id} onClick={() => {
+          if (watchlists.selected) void watchlists.makeDefault(watchlists.selected.id);
+        }}>SET DEFAULT</button>
+        <button type="button" className="is-danger" disabled={watchlists.busy || !watchlists.selected} onClick={() => {
+          if (!watchlists.selected || !window.confirm(`Delete ${watchlists.selected.name}?`)) return;
+          void watchlists.remove(watchlists.selected.id);
+        }}>DELETE LIST</button>
+        <form onSubmit={(event) => { event.preventDefault(); addSymbol(); }}>
+          <label><span>ADD SYMBOL</span><input value={symbolDraft} maxLength={15} placeholder="NVDA" onChange={(event) => setSymbolDraft(event.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ""))} /></label>
+          <button
+            type="submit"
+            title={symbols.length >= MAX_WATCHLIST_SYMBOLS ? `Watchlists are limited to ${MAX_WATCHLIST_SYMBOLS} symbols.` : undefined}
+            disabled={watchlists.busy || !watchlists.selected || !symbolDraft.trim() || symbols.length >= MAX_WATCHLIST_SYMBOLS}
+          >ADD</button>
+        </form>
+      </div>
+      <div className={watchlists.configured ? "watchlist-persistence-note is-durable" : "watchlist-persistence-note"}>
+        {watchlists.configured ? "POSTGRESQL · DURABLE WATCHLIST" : "SESSION MODE · CONNECT POSTGRESQL FOR DURABILITY"}
+        {watchlists.message ? <span>{watchlists.message}</span> : null}
+      </div>
       <Watchlist
-        status={statusFrom(result.data, result.meta, result.loading, result.error)}
+        status={statusFrom(bundle, result.meta, result.loading, result.error, symbols.length === 0 ? "Add a ticker to this watchlist." : undefined)}
         bundle={bundle}
         sortKey={sortKey}
         sortDirection={sortDirection}
         selectedSymbol={selected}
         onSort={handleSort}
         onTickerSelect={select}
+        onResearchSelect={onResearchSelect ? (symbol, target) => {
+          setSelected(symbol);
+          onResearchSelect(symbol, target);
+        } : undefined}
         onReorder={(next) => {
-          setSymbols(next);
           setSortKey(null);
+          if (watchlists.selected) void watchlists.setSymbols(watchlists.selected.id, next);
         }}
-        onRemove={(symbol) => setSymbols((current) => current.filter((candidate) => candidate !== symbol))}
+        onRemove={(symbol) => {
+          if (watchlists.selected) void watchlists.setSymbols(watchlists.selected.id, symbols.filter((candidate) => candidate !== symbol));
+        }}
       />
     </div>
   );

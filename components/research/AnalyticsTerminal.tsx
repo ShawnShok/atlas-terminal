@@ -153,22 +153,51 @@ export interface CatalystTimelineProps {
   readonly onTickerSelect?: (ticker: string) => void;
 }
 
+const TIMELINE_KIND_LABELS: Readonly<Record<CatalystTimelineItem["type"], string>> = {
+  news: "NEWS",
+  event: "CORPORATE EVENT",
+  "price-move": "PRICE MOVE",
+  "volume-spike": "VOLUME SPIKE",
+  "options-activity": "OPTIONS ACTIVITY",
+  note: "PRIVATE NOTE",
+  earnings: "EARNINGS",
+  filing: "FILING",
+  analyst: "ANALYST",
+  other: "OBSERVATION",
+};
+
 export function CatalystTimeline({ items, onTickerSelect }: CatalystTimelineProps) {
-  if (items.length === 0) return <EmptyResearchState title="NO CATALYSTS" detail="No news or corporate catalyst records were supplied." />;
   return (
-    <ol className="research-catalyst-timeline">
-      {items.map((item) => (
-        <li key={item.id} className={`importance-${item.importance}`}>
-          <div className="research-timeline-rail"><i aria-hidden="true" /><time dateTime={item.occurredAt}>{formatDateTime(item.occurredAt)}</time></div>
-          <article>
-            <div className="research-detail-meta"><button type="button" className="research-symbol-button" onClick={() => onTickerSelect?.(item.symbol)}>{item.symbol}</button><span>{item.type}</span><span>{item.sourceLabel}</span></div>
-            <h3>{item.title}</h3>
-            {item.description ? <p>{item.description}</p> : null}
-            {item.href ? <a href={item.href} target="_blank" rel="noreferrer">SOURCE ↗</a> : null}
-          </article>
-        </li>
-      ))}
-    </ol>
+    <div className="research-catalyst-view">
+      {items.length === 0
+        ? <EmptyResearchState title="NO CATALYSTS" detail="No market observations or private notes were available for this ticker." />
+        : (
+          <ol className="research-catalyst-timeline" aria-label="Chronological ticker catalyst timeline">
+            {items.map((item) => (
+              <li
+                key={item.id}
+                className={`importance-${item.importance} timeline-kind-${item.type}`}
+                data-kind={item.type}
+              >
+                <div className="research-timeline-rail"><i aria-hidden="true" /><time dateTime={item.occurredAt}>{formatDateTime(item.occurredAt)}</time></div>
+                <article>
+                  <div className="research-detail-meta">
+                    <button type="button" className="research-symbol-button" onClick={() => onTickerSelect?.(item.symbol)}>{item.symbol}</button>
+                    <span className="research-timeline-kind">{TIMELINE_KIND_LABELS[item.type]}</span>
+                    <span className="research-timeline-source">{item.sourceLabel}</span>
+                  </div>
+                  <h3>{item.title}</h3>
+                  {item.description ? <p>{item.description}</p> : null}
+                  {item.href ? <a href={item.href} target="_blank" rel="noreferrer">SOURCE ↗</a> : null}
+                </article>
+              </li>
+            ))}
+          </ol>
+        )}
+      <p className="research-disclaimer research-timeline-disclaimer">
+        Timeline order shows chronology and possible correlation only. It does not establish that any item caused a market move.
+      </p>
+    </div>
   );
 }
 
@@ -276,4 +305,3 @@ export function AnalyticsTerminal(props: AnalyticsTerminalProps) {
     </ResearchFrame>
   );
 }
-

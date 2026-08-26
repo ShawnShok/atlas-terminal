@@ -72,16 +72,16 @@ export interface MetricCellProps {
   readonly label: string;
   readonly value: ReactNode;
   readonly detail?: ReactNode;
+  readonly tooltip?: string;
   readonly tone?: "positive" | "negative" | "warning" | "neutral";
 }
 
-export function MetricCell({ label, value, detail, tone = "neutral" }: MetricCellProps) {
+export function MetricCell({ label, value, detail, tooltip, tone = "neutral" }: MetricCellProps) {
   return (
-    <div className={`research-metric research-tone-${tone}`}>
+    <div className={`research-metric research-tone-${tone}`} title={tooltip}>
       <span>{label}</span>
       <strong>{value}</strong>
       {detail ? <small>{detail}</small> : null}
     </div>
   );
 }
-

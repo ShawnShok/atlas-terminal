@@ -145,6 +145,7 @@ export type CorporateEventStatus =
   | "confirmed"
   | "pending"
   | "canceled"
+  | "rescheduled"
   | "completed"
   | "unknown";
 
@@ -163,6 +164,8 @@ export interface CorporateEvent extends DataFreshness {
 }
 
 export type OptionType = "call" | "put";
+export type OptionLastPriceSource = "last-trade" | "day-close" | "unavailable";
+export type OptionQuoteAvailability = "available" | "partial" | "unavailable";
 
 export interface OptionGreeks {
   readonly delta: number | null;
@@ -180,9 +183,15 @@ export interface OptionContract extends DataFreshness {
   readonly strikePrice: number;
   readonly exerciseStyle: "american" | "european" | "bermudan" | "unknown";
   readonly sharesPerContract: number;
+  /** True only when the provider supplied shares_per_contract for this contract. */
+  readonly sharesPerContractReported: boolean;
+  /** A reported trade or day close only; never a quote midpoint. */
   readonly lastPrice: number | null;
+  readonly lastPriceSource: OptionLastPriceSource;
   readonly bidPrice: number | null;
   readonly askPrice: number | null;
+  /** Describes whether a valid two-sided quote is present for this contract. */
+  readonly quoteAvailability: OptionQuoteAvailability;
   readonly volume: number | null;
   readonly openInterest: number | null;
   readonly impliedVolatility: number | null;
@@ -232,6 +241,8 @@ export interface AggregateBar extends DataFreshness {
   readonly symbol: string;
   readonly interval: `${number}${"m" | "h" | "D" | "W" | "M"}`;
   readonly timestamp: string;
+  /** Optional because aggregate feeds do not always classify exchange sessions. */
+  readonly session?: MarketSession;
   readonly open: number;
   readonly high: number;
   readonly low: number;

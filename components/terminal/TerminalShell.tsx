@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import { CircleHelp, Database, FolderOpen, Keyboard, Link2, Save, Unlink2 } from "lucide-react";
-import { parseCommand } from "@/lib/commands/parser";
+import { Bell, CircleHelp, Database, FolderOpen, Keyboard, Link2, Save, Unlink2 } from "lucide-react";
+import { useActiveAlertMonitor } from "@/hooks/useActiveAlertMonitor";
+import { parseAtlasCommand } from "@/lib/commands/parser";
 import { BRAND } from "@/lib/brand";
 import {
   createPanel,
@@ -10,6 +11,7 @@ import {
   getPanels,
   workspaceReducer,
   type PanelView,
+  type WorkspaceCommandTarget,
   type WorkspaceLayout,
   type WorkspaceNode,
 } from "@/lib/workspace/model";
@@ -59,6 +61,7 @@ function isTypingTarget(target: EventTarget | null) {
 const PANEL_VIEWS = new Set<PanelView>([
   "dashboard", "security", "chart", "financials", "market", "movers", "watchlist",
   "news", "events", "earnings", "options", "scanner", "analytics", "alerts", "notes",
+  "timeline",
   "settings", "activity", "system", "shortcuts",
 ]);
 
@@ -93,6 +96,7 @@ export function TerminalShell() {
   const [activity, setActivity] = useState<string[]>([]);
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [comparisonSymbols, setComparisonSymbols] = useState<readonly string[]>([]);
+  const [commandTarget, setCommandTarget] = useState<WorkspaceCommandTarget | null>(null);
   const [now, setNow] = useState<Date | null>(null);
 
   const panels = useMemo(() => getPanels(layout.root), [layout.root]);
@@ -107,6 +111,7 @@ export function TerminalShell() {
   const notify = useCallback((title: string, message: string) => {
     setToast({ title, message });
   }, []);
+  const alertMonitor = useActiveAlertMonitor(notify);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => setNow(new Date()), 0);
@@ -172,7 +177,7 @@ export function TerminalShell() {
       return;
     }
 
-    const result = parseCommand(normalized);
+    const result = parseAtlasCommand(normalized);
     if (!result.ok) {
       notify(result.error.code.replaceAll("_", " "), result.error.message);
       return;
@@ -180,6 +185,18 @@ export function TerminalShell() {
 
     const intent = result.intent;
     setActivity((events) => [`${intent.normalizedInput}`, ...events].slice(0, 12));
+
+    if (intent.kind === "watchlist" && "watchlistName" in intent) {
+      setCommandTarget((current) => ({
+        sequence: (current?.sequence ?? 0) + 1,
+        watchlistName: intent.watchlistName,
+      }));
+    } else if (intent.kind === "scanner" && "scannerPresetId" in intent) {
+      setCommandTarget((current) => ({
+        sequence: (current?.sequence ?? 0) + 1,
+        scannerPresetId: intent.scannerPresetId,
+      }));
+    }
 
     if (intent.kind === "compare") {
       setComparisonSymbols(intent.tickers);
@@ -381,6 +398,7 @@ export function TerminalShell() {
             activity={activity}
             recentTickers={recentTickers}
             comparisonSymbols={comparisonSymbols}
+            commandTarget={commandTarget}
             onActivate={activatePanel}
             onClose={closePanel}
             onMaximize={setMaximizedPanelId}
@@ -396,6 +414,7 @@ export function TerminalShell() {
         <span><i className="status-dot status-dot-green" /><strong>{BRAND.shortName} RESEARCH</strong> READY</span>
         <span><Database size={10} /><strong>DATA</strong> SERVER NORMALIZED</span>
         <span><Link2 size={10} /><strong>PANELS</strong> {panels.length} ACTIVE</span>
+        <span title={alertMonitor.message}><Bell size={10} /><strong>ALERTS</strong> {alertMonitor.label}</span>
         <span className="status-spacer" />
         <span><CircleHelp size={10} /> <kbd>?</kbd> HELP</span>
         <span><strong>READ ONLY</strong> NO TRADE EXECUTION</span>

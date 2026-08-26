@@ -30,16 +30,20 @@ const COMMANDS: CommandItem[] = [
   { id: "market", command: "MARKET", title: "Market pulse", detail: "Curated U.S. equity universe", group: "FUNCTIONS", source: "ATLAS", keywords: "market indices breadth movers" },
   { id: "movers", command: "MOVERS", title: "Market movers", detail: "Top Massive gainers and losers", group: "FUNCTIONS", source: "ATLAS", keywords: "gainers losers volume gaps" },
   { id: "scan", command: "SCAN", title: "Stock scanner", detail: "Configurable research scanner", group: "FUNCTIONS", source: "ATLAS", keywords: "scanner momentum breakout" },
+  { id: "scan-news-movers", command: "SCAN NEWS MOVERS", title: "News Movers", detail: "Recent news, material move, and elevated-volume research", group: "FUNCTIONS", source: "ATLAS", keywords: "scanner news catalyst volume" },
+  { id: "scan-earnings-soon", command: "SCAN EARNINGS SOON", title: "Earnings Soon", detail: "Reported earnings catalysts within 14 days", group: "FUNCTIONS", source: "ATLAS", keywords: "scanner earnings event" },
+  { id: "all-news", command: "NEWS", title: "News terminal", detail: "Open the multi-ticker Benzinga feed", group: "FUNCTIONS", source: "ATLAS", keywords: "news benzinga headlines all" },
   { id: "news", command: "NVDA NEWS", title: "Ticker news", detail: "Benzinga ticker headline feed", group: "FUNCTIONS", source: "ATLAS", keywords: "news benzinga headlines" },
   { id: "options", command: "NVDA OPT", title: "Options terminal", detail: "Chain, Greeks, and research analytics", group: "FUNCTIONS", source: "ATLAS", keywords: "options chain opt greeks" },
   { id: "events", command: "NVDA EVENTS", title: "Corporate events", detail: "TMX catalyst timeline", group: "FUNCTIONS", source: "ATLAS", keywords: "events earnings calendar tmx" },
+  { id: "all-events", command: "EVENTS", title: "Event calendar", detail: "Open the multi-ticker TMX calendar", group: "FUNCTIONS", source: "ATLAS", keywords: "events corporate calendar tmx" },
   { id: "financials", command: "NVDA FIN", title: "Company financials", detail: "Statements, ratios, and calculated growth", group: "FUNCTIONS", source: "ATLAS", keywords: "fundamentals statements ratios" },
   { id: "earnings", command: "EARNINGS", title: "Earnings center", detail: "Upcoming reported earnings catalysts", group: "FUNCTIONS", source: "ATLAS", keywords: "earnings calendar" },
   { id: "compare", command: "COMPARE NVDA AMD AVGO", title: "Company comparison", detail: "Normalized performance and fundamentals", group: "FUNCTIONS", source: "ATLAS", keywords: "comparison relative performance" },
   { id: "research", command: "LAYOUT RESEARCH", title: "Research workspace", detail: "Three-panel research layout", group: "WORKSPACES", source: "ATLAS", keywords: "layout panels research" },
   { id: "monitor", command: "LAYOUT MONITOR", title: "Monitor workspace", detail: "Dashboard and movers layout", group: "WORKSPACES", source: "ATLAS", keywords: "layout monitor" },
   { id: "focus", command: "LAYOUT FOCUS", title: "Focus workspace", detail: "Single security context", group: "WORKSPACES", source: "ATLAS", keywords: "layout focus" },
-  { id: "core", command: "WATCH", title: "CORE", detail: "Default research watchlist", group: "WATCHLISTS", source: "PERSONAL", keywords: "watchlist core" },
+  { id: "core", command: "WATCH CORE", title: "CORE", detail: "Open the named research watchlist", group: "WATCHLISTS", source: "PERSONAL", keywords: "watchlist core" },
 ];
 
 function scoreItem(item: CommandItem, query: string) {
@@ -173,7 +177,7 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
         </div>
         <footer className="command-footer">
           <span><kbd>↑ ↓</kbd> NAVIGATE</span><span><kbd>↵</kbd> EXECUTE</span><span><kbd>ESC</kbd> CLOSE</span>
-          <strong>EXAMPLES: NVDA · TSLA CHART · AMD OPT · META FIN</strong>
+          <strong>EXAMPLES: NVDA OVERVIEW · NEWS · EVENTS · WATCH CORE · SCAN NEWS MOVERS</strong>
         </footer>
       </section>
     </div>

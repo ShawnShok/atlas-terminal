@@ -89,8 +89,10 @@ function contract(symbol, type, volume, openInterest, impliedVolatility) {
     exerciseStyle: "american",
     sharesPerContract: 100,
     lastPrice: 1,
+    lastPriceSource: "last-trade",
     bidPrice: 0.9,
     askPrice: 1.1,
+    quoteAvailability: "available",
     volume,
     openInterest,
     impliedVolatility,
@@ -113,7 +115,32 @@ test("option chain analytics calculate ratios and rank deterministically", () =>
   assert.equal(ratios.volumeRatio, 250 / 150);
   assert.equal(ratios.openInterestRatio, 100 / 250);
   assert.deepEqual(chain.rankOptionContracts(contracts, "implied-volatility", 2).map(({ symbol }) => symbol), ["XYZ-P1", "XYZ-C2"]);
+  assert.deepEqual(chain.rankOptionContracts(contracts, "volume-open-interest-ratio", 2).map(({ symbol }) => symbol), ["XYZ-P1", "XYZ-C2"]);
   const unusual = chain.findUnusualOptionActivity(contracts);
   assert.deepEqual(unusual.map(({ contract: item }) => item.symbol), ["XYZ-P1"]);
+  assert.match(unusual[0].observation, /volume 250.*open interest 100.*2\.50×/i);
   assert.match(unusual[0].disclaimer, /does not establish/i);
+});
+
+test("option distributions and ratios preserve unavailable reported fields", () => {
+  const missing = {
+    ...contract("XYZ-P-MISSING", "put", null, null, null),
+    strikePrice: 105,
+    expirationDate: "2026-10-16",
+  };
+  const reported = {
+    ...contract("XYZ-C-REPORTED", "call", 40, 80, 0.25),
+    strikePrice: 100,
+  };
+  const ratios = chain.calculatePutCallRatios([missing, reported]);
+  assert.equal(ratios.putVolume, null);
+  assert.equal(ratios.volumeRatio, null);
+
+  const strikes = chain.summarizeOptionDistribution([missing, reported], "strike");
+  assert.deepEqual(strikes.map(({ label, volume, openInterest }) => ({ label, volume, openInterest })), [
+    { label: "$100.00", volume: 40, openInterest: 80 },
+    { label: "$105.00", volume: null, openInterest: null },
+  ]);
+  const expirations = chain.summarizeOptionDistribution([missing, reported], "expiration");
+  assert.deepEqual(expirations.map(({ key }) => key), ["2026-09-18", "2026-10-16"]);
 });

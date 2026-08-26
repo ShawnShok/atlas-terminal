@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NewsTerminal } from "@/components/research";
-import type { NewsFiltersValue } from "@/lib/research";
 import { useResearchData } from "@/hooks/useResearchData";
+import { useWatchlists } from "@/hooks/useWatchlists";
+import {
+  easternInclusiveDateUpperBound,
+  matchesNewsFilters,
+  newsReadKey,
+  newsSourceLabel,
+  parseNewsTickers,
+  sortNewsArticles,
+} from "@/lib/research";
+import type {
+  NewsAlertDraft,
+  NewsFiltersValue,
+  NewsSortDirection,
+  NewsSortKey,
+} from "@/lib/research";
 import type {
   NewsArticle,
   NewsCategory,
@@ -15,54 +29,202 @@ import type {
 import { DataState } from "./DataState";
 import { researchStatus } from "./research-status";
 
-const CORE_WATCHLIST = new Set(["NVDA", "AAPL", "MSFT", "AMD", "AVGO", "META", "PLTR", "TSLA"]);
-const SCOPE_CATEGORY: Readonly<Partial<Record<NewsFiltersValue["scope"], NewsCategory>>> = {
-  breaking: "breaking",
-  earnings: "earnings",
-  analyst: "analyst",
-  "mergers-acquisitions": "mergers-acquisitions",
-  fda: "fda",
-  guidance: "guidance",
-  macro: "macro",
-};
-
 interface LiveNewsBundle extends NewsResearchBundle {
   readonly providerNote?: string | null;
 }
 
-function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTickerSelect: (ticker: string) => void }) {
+const EMPTY_NEWS_ARTICLES: readonly NewsArticle[] = [];
+
+interface PersonalPayload<T> {
+  readonly ok: boolean;
+  readonly data?: T;
+  readonly error?: { readonly code: string; readonly message: string };
+}
+
+interface PersonalStatus {
+  readonly configured: boolean;
+  readonly detail?: string;
+}
+
+interface ReadNewsRecord {
+  readonly source: string;
+  readonly articleId: string;
+  readonly readAt: string;
+}
+
+class PersonalNewsError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "PersonalNewsError";
+    this.code = code;
+  }
+}
+
+async function personalNewsRequest<T>(resource: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/personal?resource=${encodeURIComponent(resource)}`, {
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...init,
+  });
+  const payload = await response.json() as PersonalPayload<T>;
+  if (!payload.ok || payload.data === undefined) {
+    throw new PersonalNewsError(
+      payload.error?.code ?? `HTTP_${response.status}`,
+      payload.error?.message ?? "The personal news request failed.",
+    );
+  }
+  return payload.data;
+}
+
+type ReadTrackingMode = "checking" | "durable" | "session" | "unavailable";
+
+function LiveNewsPanelInner({
+  ticker,
+  initialArticleId = null,
+  onTickerSelect,
+}: {
+  ticker: string;
+  initialArticleId?: string | null;
+  onTickerSelect: (ticker: string) => void;
+}) {
+  const watchlists = useWatchlists();
   const [filters, setFilters] = useState<NewsFiltersValue>({
     scope: "ticker",
-    ticker,
+    tickers: ticker,
     sector: "",
     category: "all",
-    date: "",
+    dateFrom: "",
+    dateTo: "",
+    timeFrom: "",
+    timeTo: "",
+    source: "",
+    recent: "all",
+    unreadOnly: false,
     keyword: "",
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialArticleId);
+  const [sortKey, setSortKey] = useState<NewsSortKey>("age");
+  const [sortDirection, setSortDirection] = useState<NewsSortDirection>("asc");
   const [nowIso, setNowIso] = useState(() => new Date().toISOString());
+  const [readMode, setReadMode] = useState<ReadTrackingMode>("checking");
+  const [readArticleKeys, setReadArticleKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [readMessage, setReadMessage] = useState<string | null>(null);
+  const pendingReadArticles = useRef(new Map<string, NewsArticle>());
+  const [personalConfigured, setPersonalConfigured] = useState<boolean | null>(null);
+  const [alertBusy, setAlertBusy] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowIso(new Date().toISOString()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const scopedCategory = SCOPE_CATEGORY[filters.scope];
+  useEffect(() => {
+    const controller = new AbortController();
+    void personalNewsRequest<PersonalStatus>("status", { signal: controller.signal })
+      .then(async (status) => {
+        if (controller.signal.aborted) return;
+        setPersonalConfigured(status.configured);
+        if (!status.configured) {
+          setReadMode("session");
+          setReadMessage(status.detail ?? "PostgreSQL is unavailable.");
+          return;
+        }
+        try {
+          const records = await personalNewsRequest<readonly ReadNewsRecord[]>("read-news", { signal: controller.signal });
+          if (controller.signal.aborted) return;
+          setReadArticleKeys((current) => new Set([
+            ...current,
+            ...records.map((record) => `${record.source.trim().toLowerCase()}:${record.articleId.trim()}`),
+          ]));
+          setReadMode("durable");
+          setReadMessage(null);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          if (error instanceof PersonalNewsError && error.code === "DATABASE_UNCONFIGURED") {
+            setPersonalConfigured(false);
+            setReadMode("session");
+            setReadMessage(error.message);
+          } else {
+            setReadMode("unavailable");
+            setReadMessage(error instanceof Error ? error.message : "Read state could not be loaded.");
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPersonalConfigured(null);
+        setReadMode("unavailable");
+        setReadMessage(error instanceof Error ? error.message : "Read-state persistence could not be checked.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const persistReadArticle = useCallback(async (article: NewsArticle) => {
+    await personalNewsRequest<ReadNewsRecord>("read-news", {
+      method: "POST",
+      body: JSON.stringify({ source: article.source, articleId: article.id }),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (readMode === "checking" || pendingReadArticles.current.size === 0) return;
+    const pending = [...pendingReadArticles.current.entries()];
+    pendingReadArticles.current.clear();
+    if (readMode === "session") return;
+    if (readMode === "unavailable") {
+      setReadArticleKeys((current) => {
+        const next = new Set(current);
+        pending.forEach(([key]) => next.delete(key));
+        return next;
+      });
+      return;
+    }
+    void Promise.allSettled(pending.map(async ([key, article]) => {
+      try {
+        await persistReadArticle(article);
+      } catch (error) {
+        setReadArticleKeys((current) => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
+        throw error;
+      }
+    })).then((results) => {
+      const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (rejected) setReadMessage(rejected.reason instanceof Error ? rejected.reason.message : "A read marker could not be saved.");
+    });
+  }, [persistReadArticle, readMode]);
+
+  const requestedTickers = useMemo(() => {
+    const parsed = parseNewsTickers(filters.tickers);
+    return filters.scope === "ticker" && parsed.length === 0 ? [ticker] : parsed;
+  }, [filters.scope, filters.tickers, ticker]);
+  const directTicker = filters.scope === "ticker" && requestedTickers.length === 1
+    ? requestedTickers[0]
+    : null;
   const params = useMemo(() => ({
-    ticker: filters.ticker || ticker,
-    all: filters.scope !== "ticker",
-    category: filters.category === "all" ? scopedCategory : filters.category,
-    after: filters.date ? `${filters.date}T00:00:00.000Z` : undefined,
-    q: filters.keyword || undefined,
-  }), [filters.category, filters.date, filters.keyword, filters.scope, filters.ticker, scopedCategory, ticker]);
+    ticker: directTicker ?? ticker,
+    all: !directTicker,
+    // Sending an earlier UTC boundary can fetch a few extra records around DST,
+    // while the exact Eastern date range is enforced locally below.
+    after: filters.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : undefined,
+    before: filters.dateTo ? easternInclusiveDateUpperBound(filters.dateTo) ?? undefined : undefined,
+  }), [directTicker, filters.dateFrom, filters.dateTo, ticker]);
   const result = useResearchData<LiveNewsBundle>("news", params, { refreshMs: 30_000, retainMs: 20_000 });
-  const baseArticles = useMemo(() => (result.data?.articles ?? []).filter((article) => {
-    if (filters.scope === "watchlist" && !article.tickers.some((symbol) => CORE_WATCHLIST.has(symbol))) return false;
-    if (filters.date && article.publishedAt.slice(0, 10) !== filters.date) return false;
-    return true;
-  }), [filters.date, filters.scope, result.data?.articles]);
-  const allArticleSymbols = useMemo(() => [...new Set(baseArticles.flatMap((article) =>
-    article.tickers.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)))].sort(), [baseArticles]);
+  const returnedArticles = result.data?.articles ?? EMPTY_NEWS_ARTICLES;
+  const availableCategories = useMemo(() => [...new Set(returnedArticles.flatMap((article) => article.categories))]
+    .sort((left, right) => left.localeCompare(right)) as NewsCategory[], [returnedArticles]);
+  const availableSources = useMemo(() => [...new Set(returnedArticles.map(newsSourceLabel))]
+    .sort((left, right) => left.localeCompare(right)), [returnedArticles]);
+  const allArticleSymbols = useMemo(() => [...new Set(returnedArticles.flatMap((article) =>
+    article.tickers.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)))].sort(), [returnedArticles]);
   // The shared API ticker parser intentionally caps one request at 100 symbols.
   const classificationSymbols = useMemo(() => allArticleSymbols.slice(0, 100), [allArticleSymbols]);
   const classificationParams = useMemo(() => ({
@@ -80,23 +242,167 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
   const classificationBySymbol = useMemo(() => new Map(
     (classifications.data ?? []).map((classification) => [classification.symbol.toUpperCase(), classification]),
   ), [classifications.data]);
-  const availableSectors = useMemo(() => {
-    const choices = [...new Set((classifications.data ?? [])
-      .map((classification) => classification.sector?.trim())
-      .filter((sector): sector is string => Boolean(sector)))].sort((left, right) => left.localeCompare(right));
-    if (filters.sector && !choices.includes(filters.sector)) choices.push(filters.sector);
-    return choices;
-  }, [classifications.data, filters.sector]);
-  const articles = useMemo(() => {
-    if (!filters.sector) return baseArticles;
-    return baseArticles.filter((article) => article.tickers.some((symbol) =>
-      classificationBySymbol.get(symbol.toUpperCase())?.sector === filters.sector));
-  }, [baseArticles, classificationBySymbol, filters.sector]);
+  const availableSectors = useMemo(() => [...new Set((classifications.data ?? [])
+    .map((classification) => classification.sector?.trim())
+    .filter((sector): sector is string => Boolean(sector)))]
+    .sort((left, right) => left.localeCompare(right)), [classifications.data]);
+  const selectedWatchlistSymbols = useMemo(() => new Set(
+    (watchlists.selected?.tickers ?? []).map((item) => item.symbol.trim().toUpperCase()),
+  ), [watchlists.selected]);
+  const requestedTickerSet = useMemo(() => new Set(requestedTickers), [requestedTickers]);
+
+  const filteredArticles = useMemo(() => returnedArticles.filter((article) => {
+    const articleSymbols = article.tickers.map((symbol) => symbol.trim().toUpperCase());
+    if (filters.scope === "watchlist" && !articleSymbols.some((symbol) => selectedWatchlistSymbols.has(symbol))) {
+      return false;
+    }
+    if (requestedTickerSet.size > 0 && !articleSymbols.some((symbol) => requestedTickerSet.has(symbol))) {
+      return false;
+    }
+    if (!matchesNewsFilters(article, filters, nowIso)) return false;
+    if (filters.sector && !articleSymbols.some((symbol) =>
+      classificationBySymbol.get(symbol)?.sector === filters.sector)) return false;
+    if (filters.unreadOnly && readArticleKeys.has(newsReadKey(article)) && article.id !== selectedId) return false;
+    return true;
+  }), [
+    classificationBySymbol,
+    filters,
+    nowIso,
+    readArticleKeys,
+    requestedTickerSet,
+    returnedArticles,
+    selectedId,
+    selectedWatchlistSymbols,
+  ]);
+  const articles = useMemo(() => sortNewsArticles(
+    filteredArticles,
+    sortKey,
+    sortDirection,
+    nowIso,
+  ), [filteredArticles, nowIso, sortDirection, sortKey]);
   const selected = articles.find((article) => article.id === selectedId) ?? articles[0] ?? null;
+
+  const markArticleRead = useCallback((article: NewsArticle) => {
+    const key = newsReadKey(article);
+    if (readArticleKeys.has(key)) return;
+    if (readMode === "unavailable") {
+      setReadMessage((current) => current ?? "Read tracking is unavailable, so this story was not marked read.");
+      return;
+    }
+    setReadArticleKeys((current) => new Set([...current, key]));
+    if (readMode === "checking") {
+      pendingReadArticles.current.set(key, article);
+      return;
+    }
+    if (readMode === "session") return;
+    void persistReadArticle(article).catch((error: unknown) => {
+      if (error instanceof PersonalNewsError && error.code === "DATABASE_UNCONFIGURED") {
+        setPersonalConfigured(false);
+        setReadMode("session");
+        setReadMessage(error.message);
+        return;
+      }
+      setReadArticleKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      setReadMessage(error instanceof Error ? error.message : "The story could not be marked read.");
+    });
+  }, [persistReadArticle, readArticleKeys, readMode]);
+
+  const createNewsAlert = useCallback(async (draft: NewsAlertDraft) => {
+    if (personalConfigured !== true) {
+      setAlertMessage("PostgreSQL is required to save an alert definition.");
+      return;
+    }
+    const normalizedTicker = parseNewsTickers(draft.ticker, 1)[0] ?? null;
+    if (draft.ticker.trim() && !normalizedTicker) {
+      setAlertMessage("Enter a valid ticker or leave the ticker field blank.");
+      return;
+    }
+    if (draft.watchlistId && !watchlists.lists.some((list) => list.id === draft.watchlistId)) {
+      setAlertMessage("Select an available watchlist.");
+      return;
+    }
+
+    setAlertBusy(true);
+    setAlertMessage(null);
+    let notificationPermission: NotificationPermission | "unsupported" | "not-requested" = "not-requested";
+    const deliveryChannels: Array<"browser" | "sound"> = [];
+    try {
+      // This permission request is deliberately inside the CREATE button's call path.
+      if (draft.browserNotification) {
+        if (typeof Notification === "undefined") {
+          notificationPermission = "unsupported";
+        } else {
+          notificationPermission = Notification.permission;
+          if (notificationPermission === "default") {
+            notificationPermission = await Notification.requestPermission();
+          }
+          if (notificationPermission === "granted") deliveryChannels.push("browser");
+        }
+      }
+      if (draft.sound) deliveryChannels.push("sound");
+
+      const selectedWatchlist = watchlists.lists.find((list) => list.id === draft.watchlistId);
+      const conditionLabel = normalizedTicker
+        || selectedWatchlist?.name
+        || draft.keyword.trim()
+        || (draft.category === "all" ? "ANY ARTICLE" : draft.category.toUpperCase());
+      await personalNewsRequest("alerts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `NEWS · ${conditionLabel || "ANY ARTICLE"}`,
+          type: "NEWS",
+          symbol: normalizedTicker,
+          watchlistId: draft.watchlistId || null,
+          configuration: {
+            schemaVersion: 1,
+            ticker: normalizedTicker,
+            watchlistId: draft.watchlistId || null,
+            keyword: draft.keyword.trim() || null,
+            category: draft.category === "all" ? null : draft.category,
+            browserNotification: draft.browserNotification,
+            sound: draft.sound,
+            notificationPermission,
+          },
+          enabled: draft.enabled,
+          cooldownMinutes: draft.cooldownMinutes,
+          deliveryChannels,
+        }),
+      });
+      const permissionNote = draft.browserNotification && notificationPermission !== "granted"
+        ? ` Browser notifications are ${notificationPermission}; that channel was not enabled.`
+        : "";
+      setAlertMessage(`Alert saved in PostgreSQL.${permissionNote} One shared monitor evaluates it every 60 seconds while this ATLAS terminal is open; a separate worker is required after the browser closes.`);
+    } catch (error) {
+      setAlertMessage(error instanceof Error ? error.message : "The news alert could not be saved.");
+    } finally {
+      setAlertBusy(false);
+    }
+  }, [personalConfigured, watchlists.lists]);
+
+  const handleSort = useCallback((nextKey: NewsSortKey) => {
+    if (nextKey === sortKey) {
+      setSortDirection((current) => current === "asc" ? "desc" : "asc");
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDirection(nextKey === "age" ? "asc" : nextKey === "publishedAt" ? "desc" : "asc");
+  }, [sortKey]);
 
   if (!result.data) return <DataState loading={result.loading} error={result.error} onRetry={result.reload} />;
   const baseStatus = researchStatus(result.meta, result.error);
   const enrichmentMessages: string[] = result.data.providerNote ? [result.data.providerNote] : [];
+  if (requestedTickers.length > 1) {
+    enrichmentMessages.push(`Multi-ticker filtering is applied to the centrally refreshed ${returnedArticles.length}-article feed window.`);
+  }
+  if (filters.scope === "watchlist") {
+    enrichmentMessages.push(watchlists.selected
+      ? `${watchlists.selected.name}: ${watchlists.selected.tickers.length} ticker${watchlists.selected.tickers.length === 1 ? "" : "s"}.`
+      : "No watchlist is selected.");
+  }
   if (allArticleSymbols.length > classificationSymbols.length) {
     enrichmentMessages.push(`Sector enrichment is limited to ${classificationSymbols.length} of ${allArticleSymbols.length} article symbols.`);
   }
@@ -119,6 +425,15 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
         message: [baseStatus.message, ...enrichmentMessages].filter(Boolean).join(" · "),
       }
     : baseStatus;
+  const readTrackingLabel = readMode === "durable"
+    ? `DURABLE READ STATE — PostgreSQL${readMessage ? ` · ${readMessage}` : ""}`
+    : readMode === "session"
+      ? `SESSION READ STATE — PostgreSQL unavailable; read markers clear when this panel closes.${readMessage ? ` ${readMessage}` : ""}`
+      : readMode === "checking"
+        ? "READ STATE — checking PostgreSQL persistence…"
+        : `READ STATE UNAVAILABLE — ${readMessage ?? "the persistence check failed"}`;
+  const watchlistOptions = watchlists.lists.map((list) => ({ id: list.id, label: list.name }));
+
   return (
     <NewsTerminal
       status={status}
@@ -129,21 +444,44 @@ function LiveNewsPanelInner({ ticker, onTickerSelect }: { ticker: string; onTick
           : "MASSIVE STOCK NEWS"}
       filters={filters}
       sectors={availableSectors}
+      categories={availableCategories}
+      sources={availableSources}
+      watchlists={watchlistOptions}
+      selectedWatchlistId={watchlists.selectedId}
       articles={articles}
       selectedArticle={selected}
+      readArticleKeys={readArticleKeys}
+      readTrackingLabel={readTrackingLabel}
+      readTrackingAvailable={readMode === "durable" || readMode === "session"}
       nowIso={nowIso}
+      sortKey={sortKey}
+      sortDirection={sortDirection}
+      alertBusy={alertBusy}
+      alertMessage={alertMessage ?? (personalConfigured === false
+        ? "ALERT PERSISTENCE UNAVAILABLE — configure DATABASE_URL to save definitions."
+        : personalConfigured === null
+          ? "Checking alert persistence…"
+          : null)}
+      alertPersistenceAvailable={personalConfigured === true}
       headlineMode
       onFiltersChange={setFilters}
-      onArticleSelect={(article: NewsArticle) => setSelectedId(article.id)}
+      onSelectedWatchlistChange={watchlists.setSelectedId}
+      onSort={handleSort}
+      onArticleSelect={(article: NewsArticle) => {
+        setSelectedId(article.id);
+        markArticleRead(article);
+      }}
+      onCreateNewsAlert={(draft) => { void createNewsAlert(draft); }}
       onTickerSelect={onTickerSelect}
       onRefresh={() => {
         result.reload();
         classifications.reload();
+        void watchlists.reload();
       }}
     />
   );
 }
 
-export function LiveNewsPanel(props: { ticker: string; onTickerSelect: (ticker: string) => void }) {
-  return <LiveNewsPanelInner key={props.ticker} {...props} />;
+export function LiveNewsPanel(props: { ticker: string; initialArticleId?: string | null; onTickerSelect: (ticker: string) => void }) {
+  return <LiveNewsPanelInner key={`${props.ticker}:${props.initialArticleId ?? "latest"}`} {...props} />;
 }

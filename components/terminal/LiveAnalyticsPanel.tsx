@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { AnalyticsTerminal } from "@/components/research";
+import { usePrivateTimelineNotes } from "@/hooks/usePrivateTimelineNotes";
 import { useResearchData } from "@/hooks/useResearchData";
 import {
   associateNewsWithPriceMovement,
@@ -10,10 +11,10 @@ import {
   compareNormalizedPerformance,
   detectResearchPatterns,
 } from "@/lib/analytics";
+import { catalystSourceLabel, mergeCatalystTimeline } from "@/lib/research/client-timeline";
 import type {
   AdvancedAnalyticsView,
   BreadthSnapshot,
-  CatalystTimelineItem,
   ComparisonCompany,
   ComparisonMetric,
   HeatmapCell,
@@ -169,32 +170,6 @@ function comparisonView(bundle: ComparisonResearchBundle | null): ComparisonView
   return { companies, metrics, normalizedPerformanceAvailable };
 }
 
-function sourceLabel(entryKind: string, meta: TerminalApiMeta | null): string {
-  if (meta?.mode === "mock") return "MOCK";
-  if (entryKind === "news") return "BENZINGA";
-  if (entryKind === "event") return "TMX";
-  if (entryKind === "price-move") return "MASSIVE";
-  return meta?.source.toUpperCase() ?? "SOURCE UNAVAILABLE";
-}
-
-function catalystItems(
-  bundle: CatalystTimelineBundle | null,
-  meta: TerminalApiMeta | null,
-): readonly CatalystTimelineItem[] {
-  if (!bundle) return [];
-  return bundle.entries.map((entry) => ({
-    id: entry.id,
-    symbol: entry.symbol,
-    occurredAt: entry.at,
-    type: entry.kind === "news" ? "news" : entry.kind === "event" ? "event" : "other",
-    title: entry.title,
-    description: entry.detail,
-    sourceLabel: sourceLabel(entry.kind, meta),
-    href: entry.url,
-    importance: "medium",
-  }));
-}
-
 function timelineArticles(
   bundle: CatalystTimelineBundle | null,
   meta: TerminalApiMeta | null,
@@ -213,14 +188,16 @@ function timelineArticles(
     categories: ["other"],
     keywords: [],
     publisher: {
-      name: sourceLabel(entry.kind, meta),
+      name: catalystSourceLabel(entry.kind, meta),
       homepageUrl: null,
       logoUrl: null,
       faviconUrl: null,
     },
     asOf: meta?.asOf ?? entry.at,
     quality: meta?.quality ?? "unknown",
-    source: meta?.mode === "mock" ? "mock" : "benzinga",
+    source: meta?.mode === "mock"
+      ? "mock"
+      : meta?.source.toLowerCase().split(/\s*\+\s*/).includes("benzinga") ? "benzinga" : "massive",
   }));
 }
 
@@ -355,6 +332,7 @@ export function LiveAnalyticsPanel({
     refreshMs: 5 * 60_000,
     retainMs: 60_000,
   });
+  const privateNotes = usePrivateTimelineNotes(ticker, activeView === "catalysts");
   const chartParams = useMemo(() => ({ ticker, range: "1Y" }), [ticker]);
   const chart = useResearchData<SecurityResearchBundle>("chart", chartParams, {
     enabled: activeView === "news-price" || activeView === "patterns",
@@ -365,7 +343,12 @@ export function LiveAnalyticsPanel({
   const cells = useMemo(() => heatmapCells(market.data), [market.data]);
   const currentBreadth = useMemo(() => breadthSnapshot(market.data, market.meta?.asOf ?? null), [market.data, market.meta?.asOf]);
   const compared = useMemo(() => comparisonView(comparison.data), [comparison.data]);
-  const catalysts = useMemo(() => catalystItems(timeline.data, timeline.meta), [timeline.data, timeline.meta]);
+  const catalysts = useMemo(() => mergeCatalystTimeline({
+    symbol: ticker,
+    entries: timeline.data?.entries ?? [],
+    notes: privateNotes.notes,
+    meta: timeline.meta,
+  }), [privateNotes.notes, ticker, timeline.data, timeline.meta]);
   const newsPrice = useMemo(() => newsPriceSeries(ticker, chart.data, timeline.data, timeline.meta), [chart.data, ticker, timeline.data, timeline.meta]);
   const patterns = useMemo(() => patternCandidates(ticker, chart.data), [chart.data, ticker]);
 
@@ -399,11 +382,13 @@ export function LiveAnalyticsPanel({
     activeError = timeline.error;
     loading = timeline.loading;
     missingData = !timeline.data;
-    reload = timeline.reload;
+    reload = () => { timeline.reload(); privateNotes.reload(); };
     statusMessage = [
-      "Timeline entries combine reported news, events, and large price moves; temporal proximity does not establish causation.",
+      "Market observations and private PostgreSQL notes are merged in this browser in chronological order; private note content is not sent to market-data providers.",
+      "Chronology and correlation do not establish causation.",
+      privateNotes.message,
       ...(timeline.data?.availability.notes ?? []),
-    ].join(" ");
+    ].filter(Boolean).join(" ");
   } else if (activeView === "patterns") {
     activeMeta = chart.meta;
     activeError = chart.error;

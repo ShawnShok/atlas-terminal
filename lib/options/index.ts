@@ -8,8 +8,11 @@ export {
 export {
   calculatePutCallRatios,
   findUnusualOptionActivity,
+  optionVolumeToOpenInterest,
   rankOptionContracts,
+  summarizeOptionDistribution,
   type OptionActivityObservation,
+  type OptionDistributionBucket,
   type OptionRankingMetric,
   type PutCallRatios,
 } from "./chain-analytics";

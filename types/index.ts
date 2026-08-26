@@ -19,6 +19,8 @@ export type {
   NewsPublisher,
   OptionContract,
   OptionGreeks,
+  OptionLastPriceSource,
+  OptionQuoteAvailability,
   OptionType,
   PaginatedResult,
   Quote,

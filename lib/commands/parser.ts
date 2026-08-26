@@ -37,6 +37,7 @@ export interface CommandParserRegistry<
 
 export const DEFAULT_COMMAND_REGISTRY = {
   tickerCommands: [
+    { keyword: "OVERVIEW", kind: "security" },
     { keyword: "CHART", kind: "chart" },
     { keyword: "NEWS", kind: "news" },
     { keyword: "OPT", kind: "options" },
@@ -46,6 +47,8 @@ export const DEFAULT_COMMAND_REGISTRY = {
   exactCommands: [
     { keyword: "MARKET", kind: "market" },
     { keyword: "MOVERS", kind: "movers" },
+    { keyword: "NEWS", kind: "news" },
+    { keyword: "EVENTS", kind: "events" },
     { keyword: "SCAN", kind: "scanner" },
     { keyword: "WATCH", kind: "watchlist" },
     { keyword: "EARNINGS", kind: "earnings" },
@@ -99,6 +102,29 @@ export type CommandIntent = RegistryCommandIntent<
   ExactCommandKind,
   TickerListCommandKind
 >;
+
+export const SCANNER_COMMAND_PRESETS = [
+  { name: "NEWS MOVERS", id: "news-movers" },
+  { name: "CATALYST MOMENTUM", id: "catalyst-momentum" },
+  { name: "EARNINGS SOON", id: "earnings-soon" },
+  { name: "HIGH RELATIVE VOLUME", id: "high-relative-volume" },
+  { name: "BREAKOUT WATCH", id: "breakout-watch" },
+  { name: "UNUSUAL OPTIONS RESEARCH", id: "unusual-options-research" },
+  { name: "WATCHLIST CATALYST FEED", id: "watchlist-catalyst-feed" },
+] as const;
+
+export type AtlasCommandIntent = CommandIntent
+  | Readonly<{
+      kind: "watchlist";
+      watchlistName: string;
+      normalizedInput: string;
+    }>
+  | Readonly<{
+      kind: "scanner";
+      scannerPresetId: (typeof SCANNER_COMMAND_PRESETS)[number]["id"];
+      scannerPresetName: (typeof SCANNER_COMMAND_PRESETS)[number]["name"];
+      normalizedInput: string;
+    }>;
 
 export type CommandParseErrorCode =
   | "INVALID_INPUT"
@@ -163,6 +189,13 @@ export const DEFAULT_COMMAND_CATALOG: readonly CommandSuggestion[] = [
     keywords: ["ticker", "symbol", "company", "stock"],
   },
   {
+    id: "command:overview",
+    label: "Open ticker overview",
+    kind: "command",
+    command: "<TICKER> OVERVIEW",
+    keywords: ["ticker", "summary", "research"],
+  },
+  {
     id: "command:chart",
     label: "Open ticker chart",
     kind: "command",
@@ -219,10 +252,31 @@ export const DEFAULT_COMMAND_CATALOG: readonly CommandSuggestion[] = [
     keywords: ["screener", "filters"],
   },
   {
+    id: "page:news",
+    label: "News terminal",
+    kind: "page",
+    command: "NEWS",
+    keywords: ["benzinga", "headlines", "feed"],
+  },
+  {
+    id: "page:events",
+    label: "Corporate-event calendar",
+    kind: "page",
+    command: "EVENTS",
+    keywords: ["tmx", "calendar", "catalysts"],
+  },
+  {
+    id: "command:scan-news-movers",
+    label: "Run News Movers scanner",
+    kind: "saved-screen",
+    command: "SCAN NEWS MOVERS",
+    keywords: ["scanner", "news", "volume"],
+  },
+  {
     id: "page:watchlist",
     label: "Watchlist",
     kind: "page",
-    command: "WATCH",
+    command: "WATCH CORE",
     keywords: ["favorites", "saved tickers"],
   },
   {
@@ -616,6 +670,56 @@ export function parseCommand(input: string): CommandParseResult {
 export function parseCommandIntent(input: string): CommandIntent | null {
   const result = parseCommand(input);
   return result.ok ? result.intent : null;
+}
+
+/**
+ * Parse ATLAS' user-facing command language, including named watchlists and
+ * bounded scanner presets. The core parser stays generic while this wrapper
+ * handles the two deliberately multi-word command families.
+ */
+export function parseAtlasCommand(input: string): CommandParseResult<AtlasCommandIntent> {
+  const normalizedInput = normalizeCommandInput(input);
+
+  if (normalizedInput.startsWith("WATCH ")) {
+    const watchlistName = normalizedInput.slice("WATCH ".length);
+    if (!/^[A-Z0-9][A-Z0-9 &_'-]{0,39}$/.test(watchlistName)) {
+      return failure(
+        "INVALID_INPUT",
+        "Watchlist names may use letters, numbers, spaces, &, apostrophes, underscores, and hyphens.",
+        input,
+        normalizedInput,
+      );
+    }
+    return {
+      ok: true,
+      intent: { kind: "watchlist", watchlistName, normalizedInput },
+    };
+  }
+
+  if (normalizedInput.startsWith("SCAN ")) {
+    const requestedName = normalizedInput.slice("SCAN ".length);
+    const preset = SCANNER_COMMAND_PRESETS.find(({ name }) => name === requestedName);
+    if (!preset) {
+      return failure(
+        "UNKNOWN_COMMAND",
+        `Unknown scanner preset: ${requestedName}.`,
+        input,
+        normalizedInput,
+        { token: requestedName, tokenIndex: 1 },
+      );
+    }
+    return {
+      ok: true,
+      intent: {
+        kind: "scanner",
+        scannerPresetId: preset.id,
+        scannerPresetName: preset.name,
+        normalizedInput,
+      },
+    };
+  }
+
+  return parseCommand(input);
 }
 
 function fuzzyScore(query: string, candidate: string): number {

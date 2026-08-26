@@ -12,7 +12,13 @@ import type {
 } from "lightweight-charts";
 
 import type { AggregateBar } from "@/types/market";
-import { normalizeChartBars, stockCurrency, stockDateTime } from "@/lib/stocks";
+import {
+  getExtendedHoursAvailability,
+  normalizeChartBars,
+  selectChartBars,
+  stockCurrency,
+  stockDateTime,
+} from "@/lib/stocks";
 import type {
   ChartDisplaySettings,
   ChartIndicatorSeries,
@@ -20,14 +26,17 @@ import type {
 } from "@/lib/stocks";
 import { ChartControls, type ChartControlsProps } from "./ChartControls";
 
-function indicatorData(points: ChartIndicatorSeries["points"]) {
+function indicatorData(
+  points: ChartIndicatorSeries["points"],
+  visibleTimes: ReadonlySet<number>,
+) {
   return [...points]
     .map((point) => ({
       time: Math.floor(Date.parse(point.timestamp) / 1_000) as UTCTimestamp,
       value: point.value,
       color: point.color,
     }))
-    .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value))
+    .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value) && visibleTimes.has(Number(point.time)))
     .sort((left, right) => Number(left.time) - Number(right.time));
 }
 
@@ -58,7 +67,22 @@ export function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
   const [chartError, setChartError] = useState<string | null>(null);
-  const normalizedBars = useMemo(() => normalizeChartBars(bars), [bars]);
+  const extendedHoursAvailability = useMemo(
+    () => getExtendedHoursAvailability(bars),
+    [bars],
+  );
+  const normalizedBars = useMemo(
+    () => normalizeChartBars(selectChartBars(
+      bars,
+      Boolean(settings.includeExtendedHours),
+      extendedHoursAvailability,
+    )),
+    [bars, extendedHoursAvailability, settings.includeExtendedHours],
+  );
+  const visibleTimes = useMemo(
+    () => new Set(normalizedBars.map((bar) => bar.time)),
+    [normalizedBars],
+  );
 
   useEffect(() => {
     if (!containerRef.current || status.state !== "ready" || normalizedBars.length === 0) return;
@@ -82,7 +106,13 @@ export function PriceChart({
             horzLines: { color: "#151e27" },
           },
           crosshair: { mode: library.CrosshairMode.MagnetOHLC },
-          rightPriceScale: { borderColor: "#263442", scaleMargins: { top: 0.08, bottom: 0.08 } },
+          rightPriceScale: {
+            borderColor: "#263442",
+            mode: settings.priceScaleMode === "logarithmic"
+              ? library.PriceScaleMode.Logarithmic
+              : library.PriceScaleMode.Normal,
+            scaleMargins: { top: 0.08, bottom: 0.08 },
+          },
           timeScale: { borderColor: "#263442", timeVisible: true, secondsVisible: false, rightOffset: 4 },
           handleScroll: true,
           handleScale: true,
@@ -152,7 +182,7 @@ export function PriceChart({
           : null;
         for (const series of enabledSeries) {
           const paneIndex = series.pane === "separate" ? separatePane ?? 0 : 0;
-          const data = indicatorData(series.points);
+          const data = indicatorData(series.points, visibleTimes);
           if (series.kind === "histogram") {
             const api = chart.addSeries(library.HistogramSeries, {
               color: series.color,
@@ -187,7 +217,7 @@ export function PriceChart({
       chartRef.current = null;
       chart?.remove();
     };
-  }, [height, indicatorSeries, normalizedBars, settings, status.state]);
+  }, [height, indicatorSeries, normalizedBars, settings, status.state, visibleTimes]);
 
   useEffect(() => {
     if (fitRequest > 0) chartRef.current?.timeScale().fitContent();
@@ -208,12 +238,19 @@ export function PriceChart({
         settings={settings}
         availableTimeframes={availableTimeframes}
         availableIntervals={availableIntervals}
+        extendedHoursAvailability={extendedHoursAvailability}
         onChange={onSettingsChange}
         onResetView={() => setFitRequest((request) => request + 1)}
       />
       <div className="stock-chart-legend" aria-live="polite">
         <strong>{symbol}</strong>
         <span>{settings.timeframe} · {settings.interval}</span>
+        <span>{(settings.priceScaleMode ?? "linear").toUpperCase()} SCALE</span>
+        <span className="stock-chart-session-state" title={extendedHoursAvailability.reason}>
+          EXT {extendedHoursAvailability.available
+            ? (settings.includeExtendedHours ? "ON" : "OFF")
+            : extendedHoursAvailability.label}
+        </span>
         {latest ? (
           <>
             <time dateTime={latest.timestamp}>{stockDateTime(latest.timestamp)}</time>
@@ -224,7 +261,7 @@ export function PriceChart({
           </>
         ) : null}
       </div>
-      <div className="stock-chart-canvas" ref={containerRef} style={{ height }} />
+      <div className="stock-chart-canvas" ref={containerRef} />
       {overlay ? <div className={`stock-chart-overlay state-${status.state}`} role="status">{overlay}</div> : null}
       <p className="stock-chart-attribution">Interactive chart rendered with Lightweight Charts™. Market data status is shown separately above.</p>
     </section>

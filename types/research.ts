@@ -8,6 +8,7 @@ import type {
   FinancialLineItem,
   NewsArticle,
   OptionContract,
+  OptionQuoteAvailability,
   Snapshot,
   TickerDetails,
 } from "./market";
@@ -61,6 +62,8 @@ export interface WatchlistResearchBundle {
   readonly name: string;
   readonly symbols: readonly string[];
   readonly snapshots: readonly MarketSnapshotRow[];
+  /** Fully joined rows used by the professional watchlist. Missing enrichments stay null. */
+  readonly quotes?: readonly WatchlistQuote[];
 }
 
 export interface NewsSummary {
@@ -156,8 +159,12 @@ export interface OptionChainBundle {
   readonly expirations: readonly string[];
   readonly selectedExpiration: string | null;
   readonly contracts: readonly OptionContract[];
+  /** False when provider pagination was stopped before the selected-expiration cursor was exhausted. */
+  readonly contractsComplete: boolean;
   readonly asOf: string;
   readonly quality: DataQuality;
+  readonly quoteAvailability: OptionQuoteAvailability;
+  readonly quoteNote: string;
 }
 
 export type FinancialTimeframe = "annual" | "quarterly" | "ttm";
@@ -208,7 +215,13 @@ export interface CatalystTimelineEntry {
   readonly id: string;
   readonly at: string;
   readonly symbol: string;
-  readonly kind: "news" | "event" | "price-move";
+  readonly kind:
+    | "news"
+    | "event"
+    | "price-move"
+    | "volume-spike"
+    | "options-activity"
+    | "note";
   readonly title: string;
   readonly detail: string | null;
   readonly url: string | null;
@@ -221,6 +234,8 @@ export interface CatalystTimelineBundle {
     readonly news: boolean;
     readonly events: boolean;
     readonly priceMoves: boolean;
+    readonly volumeSpikes: boolean;
+    readonly optionsActivity: boolean;
     readonly notes: readonly string[];
   };
 }

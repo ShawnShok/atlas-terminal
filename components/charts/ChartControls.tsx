@@ -4,9 +4,11 @@ import type {
   ChartDisplaySettings,
   ChartIndicatorId,
   ChartInterval,
+  ChartPriceScaleMode,
   ChartTimeframe,
   PriceSeriesType,
 } from "@/lib/stocks";
+import type { ExtendedHoursAvailability } from "@/lib/stocks/chart-settings";
 
 export const DEFAULT_TIMEFRAMES: readonly ChartTimeframe[] = [
   "1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "MAX",
@@ -31,14 +33,23 @@ export interface ChartControlsProps {
   readonly settings: ChartDisplaySettings;
   readonly availableTimeframes?: readonly ChartTimeframe[];
   readonly availableIntervals?: readonly ChartInterval[];
+  readonly extendedHoursAvailability?: ExtendedHoursAvailability;
   readonly onChange: (settings: ChartDisplaySettings) => void;
   readonly onResetView?: () => void;
 }
+
+const UNKNOWN_EXTENDED_HOURS: ExtendedHoursAvailability = {
+  available: false,
+  state: "unclassified",
+  label: "NO SESSION TAGS",
+  reason: "The supplied bars do not expose exchange-session classification.",
+};
 
 export function ChartControls({
   settings,
   availableTimeframes = DEFAULT_TIMEFRAMES,
   availableIntervals = DEFAULT_INTERVALS,
+  extendedHoursAvailability = UNKNOWN_EXTENDED_HOURS,
   onChange,
   onResetView,
 }: ChartControlsProps) {
@@ -56,6 +67,9 @@ export function ChartControls({
         : [...settings.activeIndicators, indicator],
     );
   };
+  const scaleMode = settings.priceScaleMode ?? "linear";
+  const extendedHoursEnabled = extendedHoursAvailability.available
+    && Boolean(settings.includeExtendedHours);
 
   return (
     <div className="stock-chart-controls">
@@ -90,6 +104,32 @@ export function ChartControls({
         <input type="checkbox" checked={settings.volumeVisible} onChange={(event) => update("volumeVisible", event.target.checked)} />
         <span>VOLUME</span>
       </label>
+      <div className="stock-scale-controls" role="group" aria-label="Price scale">
+        <span>PRICE SCALE</span>
+        {(["linear", "logarithmic"] as const satisfies readonly ChartPriceScaleMode[]).map((mode) => (
+          <button
+            type="button"
+            key={mode}
+            className={scaleMode === mode ? "is-active" : ""}
+            aria-pressed={scaleMode === mode}
+            onClick={() => update("priceScaleMode", mode)}
+          >
+            {mode === "linear" ? "LIN" : "LOG"}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={`stock-extended-hours${extendedHoursEnabled ? " is-active" : ""}`}
+        disabled={!extendedHoursAvailability.available}
+        aria-pressed={extendedHoursEnabled}
+        aria-label={`Extended hours: ${extendedHoursAvailability.available ? (extendedHoursEnabled ? "shown" : "hidden") : extendedHoursAvailability.label.toLowerCase()}`}
+        title={extendedHoursAvailability.reason}
+        onClick={() => update("includeExtendedHours", !extendedHoursEnabled)}
+      >
+        <span>EXT HRS</span>
+        <small>{extendedHoursAvailability.available ? (extendedHoursEnabled ? "ON" : "OFF") : extendedHoursAvailability.label}</small>
+      </button>
       {onResetView ? <button type="button" className="stock-chart-reset" onClick={onResetView}>FIT</button> : null}
       <div className="stock-indicator-controls" role="group" aria-label="Chart indicators">
         <span>INDICATORS</span>
@@ -108,4 +148,3 @@ export function ChartControls({
     </div>
   );
 }
-

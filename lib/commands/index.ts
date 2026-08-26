@@ -5,13 +5,16 @@ export {
   createCommandParser,
   isTickerSymbol,
   normalizeCommandInput,
+  parseAtlasCommand,
   parseCommand,
   parseCommandIntent,
   rankCommandSuggestions,
+  SCANNER_COMMAND_PRESETS,
 } from "./parser";
 
 export type {
   CommandIntent,
+  AtlasCommandIntent,
   CommandKeywordDefinition,
   CommandParseError,
   CommandParseErrorCode,

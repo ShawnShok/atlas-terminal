@@ -61,3 +61,16 @@ test("default personal references are checked against the authenticated owner", 
   assert.match(personalRoute, /where:\s*\{ id: input\.defaultWorkspaceId, ownerId \}/);
   assert.match(personalRoute, /await assertOwnedSettingsReferences\(db, ownerId, input\)/);
 });
+
+test("durable watchlist updates validate unique symbols and preserve owner boundaries", () => {
+  assert.match(personalRoute, /const watchlistSymbolsSchema = z\.array\(tickerSchema\)\.max\(100\)\.superRefine/);
+  assert.match(personalRoute, /each watchlist symbol must be unique/);
+  assert.match(personalRoute, /const watchlistPatchSchema = z\.object/);
+  assert.match(personalRoute, /At least one watchlist field must be supplied/);
+  assert.match(personalRoute, /const ownedWatchlist = await transaction\.watchlist\.findFirst\(\{\s*where: \{ id, ownerId \}/);
+  assert.match(personalRoute, /throw new AppError\("NOT_FOUND", "The selected watchlist is not available to this account\."\)/);
+  assert.match(personalRoute, /transaction\.watchlistTicker\.deleteMany/);
+  assert.match(personalRoute, /where: \{ watchlistId_symbol: \{ watchlistId: id, symbol \} \}/);
+  assert.match(personalRoute, /where: \{ id_ownerId: \{ id, ownerId \} \}/);
+  assert.match(personalRoute, /include: \{ tickers: \{ orderBy: \{ position: "asc" \} \} \}/);
+});
