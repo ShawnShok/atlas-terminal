@@ -83,6 +83,14 @@ test("option service forwards whether its bounded provider cursor was exhausted"
   assert.match(serviceSource, /adaptOptionChain\(combined, symbol, expiration, contractsComplete\)/);
 });
 
+test("option expiration discovery advances by date instead of exhausting pages on front-month strikes", async () => {
+  const serviceSource = await readFile(new URL("../lib/massive/research-service.ts", import.meta.url), "utf8");
+  assert.match(serviceSource, /MAX_OPTION_EXPIRATION_CALENDAR_PAGES = 12/);
+  assert.match(serviceSource, /"expiration_date\.gt": pageIndex === 0 \? undefined : cursor/);
+  assert.match(serviceSource, /const nextCursor = pageExpirations\.at\(-1\)!/);
+  assert.match(serviceSource, /if \(nextCursor <= cursor \|\| !response\.next_url\) break/);
+});
+
 test("earnings route requests both TMX release and conference-call aliases", async () => {
   const routeSource = await readFile(new URL("../app/api/research/route.ts", import.meta.url), "utf8");
   assert.match(routeSource, /publishedBefore: isoTimestamp\(request\.nextUrl\.searchParams\.get\("before"\)\)/);

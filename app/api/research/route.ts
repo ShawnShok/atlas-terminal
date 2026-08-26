@@ -1024,8 +1024,8 @@ export async function GET(request: NextRequest) {
       }
       case "options-surface": {
         const data = mode === "mock"
-          ? await mock.getOptionIvSurface({ symbol, expirationLimit: 8 })
-          : await live!.getOptionIvSurface({ symbol, expirationLimit: 8 });
+          ? await mock.getOptionIvSurface({ symbol, expirationLimit: 12 })
+          : await live!.getOptionIvSurface({ symbol, expirationLimit: 12 });
         return response(data, {
           mode,
           source: mode === "mock" ? "mock" : "massive",

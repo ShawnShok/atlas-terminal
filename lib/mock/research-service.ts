@@ -269,7 +269,12 @@ function mockEvents(ticker?: string): readonly CorporateEvent[] {
 
 function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle {
   const underlyingPrice = symbolPrice(symbol);
-  const expirations = ["2026-08-21", "2026-09-18", "2026-10-16", "2027-01-15"];
+  const expirations = [
+    "2026-08-28", "2026-09-18", "2026-10-16", "2026-12-18",
+    "2027-01-15", "2027-06-18", "2027-12-17", "2028-01-21",
+    "2028-06-16", "2028-12-15", "2029-06-15", "2029-12-21",
+    "2030-12-20",
+  ];
   const selectedExpiration = expiration && expirations.includes(expiration) ? expiration : expirations[0];
   const termIndex = Math.max(0, expirations.indexOf(selectedExpiration));
   const baseStrike = Math.round(underlyingPrice / 5) * 5;
@@ -419,7 +424,7 @@ export class MockResearchService implements ResearchService {
   async getOptionIvSurface(input: { symbol: string; expirationLimit?: number }): Promise<OptionIvSurfaceBundle> {
     const symbol = input.symbol.trim().toUpperCase();
     const available = mockOptionChain(symbol).expirations;
-    const expirations = selectIvSurfaceExpirations(available, MOCK_AS_OF, input.expirationLimit ?? 8);
+    const expirations = selectIvSurfaceExpirations(available, MOCK_AS_OF, input.expirationLimit ?? 12);
     return buildOptionIvSurface(symbol, expirations, expirations.map((expiration) =>
       mockOptionChain(symbol, expiration)));
   }

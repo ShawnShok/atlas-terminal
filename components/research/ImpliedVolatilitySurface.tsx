@@ -142,7 +142,7 @@ export function ImpliedVolatilitySurface({
         <div>
           <span>PROVIDER-REPORTED VOLATILITY</span>
           <h3>IMPLIED VOLATILITY SURFACE</h3>
-          <small>STRIKE MONEYNESS × EXPIRATION · NEAREST LISTED STRIKE · NO INTERPOLATION</small>
+          <small>STRIKE MONEYNESS × DATED EXPIRATION · NEAREST LISTED STRIKE · EXTENDED TENOR · NO INTERPOLATION</small>
         </div>
         <div className="research-iv-side-switch" role="group" aria-label="Surface contract side">
           {SIDE_OPTIONS.map((option) => (
@@ -164,6 +164,7 @@ export function ImpliedVolatilitySurface({
           <MetricCell label="FRONT ATM IV" value={formatIv(frontAtm)} detail={firstRow ? `${formatDate(firstRow.expirationDate)} · ${firstRow.dte ?? "—"} DTE` : undefined} />
           <MetricCell label="TERM SLOPE" value={formatVolPointChange(termSlope)} detail="BACK ATM MINUS FRONT ATM" tone={termSlope !== null && termSlope > 0 ? "positive" : termSlope !== null && termSlope < 0 ? "negative" : "neutral"} />
           <MetricCell label="FRONT SKEW" value={formatVolPointChange(frontSkew)} detail="-10% MONEYNESS MINUS +10%" />
+          <MetricCell label="SURFACE THROUGH" value={lastRow ? formatDate(lastRow.expirationDate) : "—"} detail={lastRow ? `${lastRow.dte ?? "—"} DTE · ${rows.length} DATED MATURITIES` : undefined} />
           <MetricCell label="GRID COVERAGE" value={coverage === null ? "—" : `${Math.round(coverage * 100)}%`} detail={`${values.length}/${totalCells} OBSERVATIONS`} tone={surface.contractsComplete ? "neutral" : "warning"} />
         </div>
       ) : null}

@@ -69,6 +69,7 @@ const tickerSchema = z
 const dateSchema = z.iso.date();
 const MAX_BENZINGA_NEWS_PAGES = 5;
 const MAX_TMX_EVENT_PAGES = 8;
+const MAX_OPTION_EXPIRATION_CALENDAR_PAGES = 12;
 const BENZINGA_NEWS_PAGE_SIZE = 100;
 const TMX_EVENT_PAGE_SIZE = 250;
 
@@ -301,24 +302,39 @@ export class MassiveResearchService implements ResearchService {
   async getOptionExpirations(symbolInput: string): Promise<readonly string[]> {
     const symbol = normalizeTicker(symbolInput);
     const today = new Date().toISOString().slice(0, 10);
-    const response = await this.#client.request({
-      path: "/v3/reference/options/contracts",
-      query: {
-        underlying_ticker: symbol,
-        expired: false,
-        "expiration_date.gte": today,
-        limit: 1_000,
-        sort: "expiration_date",
-        order: "asc",
-      },
-      schema: massiveOptionContractsResponseSchema,
-      cacheTtlMs: this.#ttls.reference,
-      staleIfErrorMs: 0,
-    });
-    const pages = await this.#collectPages(response, massiveOptionContractsResponseSchema, 2, this.#ttls.reference);
-    return [...new Set(pages.flatMap((page) => page.results ?? []).flatMap((contract) =>
-      contract.expiration_date ? [contract.expiration_date] : [],
-    ))].sort();
+    const expirations = new Set<string>();
+    let cursor = today;
+
+    // A normal cursor spends thousands of rows walking every strike in the
+    // front expirations. Jump past the latest date observed on each page so
+    // the calendar reaches provider-listed LEAPS without dropping any date.
+    for (let pageIndex = 0; pageIndex < MAX_OPTION_EXPIRATION_CALENDAR_PAGES; pageIndex += 1) {
+      const response = await this.#client.request({
+        path: "/v3/reference/options/contracts",
+        query: {
+          underlying_ticker: symbol,
+          expired: false,
+          "expiration_date.gte": pageIndex === 0 ? cursor : undefined,
+          "expiration_date.gt": pageIndex === 0 ? undefined : cursor,
+          limit: 1_000,
+          sort: "expiration_date",
+          order: "asc",
+        },
+        schema: massiveOptionContractsResponseSchema,
+        cacheTtlMs: this.#ttls.reference,
+        staleIfErrorMs: 0,
+      });
+      const pageExpirations = [...new Set((response.results ?? []).flatMap((contract) =>
+        contract.expiration_date ? [contract.expiration_date] : [],
+      ))].sort();
+      if (pageExpirations.length === 0) break;
+      pageExpirations.forEach((expiration) => expirations.add(expiration));
+      const nextCursor = pageExpirations.at(-1)!;
+      if (nextCursor <= cursor || !response.next_url) break;
+      cursor = nextCursor;
+    }
+
+    return [...expirations].sort();
   }
 
   async getOptionChain(input: OptionChainQuery): Promise<OptionChainBundle> {
@@ -333,7 +349,7 @@ export class MassiveResearchService implements ResearchService {
 
   async getOptionIvSurface(input: OptionIvSurfaceQuery): Promise<OptionIvSurfaceBundle> {
     const symbol = normalizeTicker(input.symbol);
-    const limit = input.expirationLimit ?? 8;
+    const limit = input.expirationLimit ?? 12;
     const expirations = await this.getOptionExpirations(symbol);
     const requestedExpirations = selectIvSurfaceExpirations(expirations, new Date().toISOString(), limit);
     const settled = await mapWithProviderConcurrency(requestedExpirations, 3, async (expiration) => {

@@ -130,6 +130,7 @@ export function OptionsHeader({
   onFiltersChange,
 }: OptionsHeaderProps) {
   const dte = calculateDaysToExpiration(filters.expirationDate, nowIso);
+  const lastExpiration = expirationDates.at(-1) ?? null;
   const update = <Key extends keyof OptionChainFilters,>(key: Key, value: OptionChainFilters[Key]) =>
     onFiltersChange({ ...filters, [key]: value });
   const quote = underlying.quote;
@@ -143,7 +144,7 @@ export function OptionsHeader({
         <small>{underlying.name}</small>
       </div>
       <label className="research-option-expiration">
-        <span>EXPIRATION</span>
+        <span>EXPIRATION DATE</span>
         <select
           value={filters.expirationDate}
           disabled={expirationDates.length === 0}
@@ -151,8 +152,17 @@ export function OptionsHeader({
         >
           {expirationDates.length === 0
             ? <option value="">NO EXPIRATIONS</option>
-            : expirationDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}
+            : expirationDates.map((date) => (
+              <option key={date} value={date}>
+                {formatDate(date)} · {calculateDaysToExpiration(date, nowIso) ?? "—"} DTE
+              </option>
+            ))}
         </select>
+        <small>
+          {lastExpiration
+            ? `${expirationDates.length} LISTED · THROUGH ${formatDate(lastExpiration)}`
+            : "NO LISTED DATES"}
+        </small>
       </label>
       <div className="research-dte"><span>DTE</span><strong>{dte ?? "—"}</strong></div>
       <MetricCell

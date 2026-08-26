@@ -38,13 +38,14 @@ function chain(expirationDate, contracts, overrides = {}) {
 test("IV surface maturity selection spans representative tenors", () => {
   const expirations = [
     "2026-08-21", "2026-08-28", "2026-09-04", "2026-09-18",
-    "2026-10-16", "2026-11-20", "2027-02-19", "2027-08-20", "2028-08-18",
+    "2026-10-16", "2026-11-20", "2027-02-19", "2027-08-20",
+    "2028-01-21", "2028-08-18", "2029-08-17", "2030-08-16", "2031-08-15",
   ];
-  const selected = surface.selectIvSurfaceExpirations(expirations, "2026-08-15T12:00:00.000Z", 8);
-  assert.equal(selected.length, 8);
+  const selected = surface.selectIvSurfaceExpirations(expirations, "2026-08-15T12:00:00.000Z", 12);
+  assert.equal(selected.length, 12);
   assert.deepEqual([...selected].sort(), [...selected]);
   assert.ok(selected.includes("2026-08-21"));
-  assert.ok(selected.some((expiration) => expiration >= "2027-02-19"));
+  assert.ok(selected.some((expiration) => expiration >= "2030-08-16"));
 });
 
 test("IV surface aggregates calls and puts without inventing missing sides", () => {
@@ -114,10 +115,13 @@ test("options terminal exposes the interactive IV surface and API source", async
   assert.match(component, /BLENDED/);
   assert.match(component, /FRONT ATM IV/);
   assert.match(component, /TERM SLOPE/);
+  assert.match(component, /SURFACE THROUGH/);
+  assert.match(component, /EXTENDED TENOR/);
   assert.match(component, /NO INTERPOLATION/);
   assert.match(livePanel, /useResearchData<OptionIvSurfaceBundle>\("options-surface"/);
   assert.match(livePanel, /initialView = "chain"/);
   assert.match(route, /case "options-surface"/);
+  assert.match(route, /expirationLimit: 12/);
   assert.match(service, /getOptionIvSurface/);
   assert.match(service, /mapWithProviderConcurrency\(requestedExpirations, 3/);
 });

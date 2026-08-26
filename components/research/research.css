@@ -338,7 +338,7 @@
 .research-options-disclosure time { color: #77715e; font-size: 7px; white-space: nowrap; }
 .research-options-disclosure.is-unavailable { border-color: #6b2e37; background: rgba(29, 12, 16, .98); color: #b68b91; }
 .research-options-disclosure.is-unavailable b { color: var(--red); }
-.research-options-header { display: grid; grid-template-columns: minmax(190px, 1.2fr) 140px 58px minmax(125px, .7fr) 120px 145px; border-bottom: 1px solid var(--line-strong); }
+.research-options-header { display: grid; grid-template-columns: minmax(190px, 1.2fr) minmax(190px, .95fr) 58px minmax(125px, .7fr) 120px 145px; border-bottom: 1px solid var(--line-strong); }
 .research-underlying-quote { display: grid; grid-template-columns: 55px auto auto; align-content: center; gap: 3px 10px; min-height: 70px; padding: 9px 12px; border-right: 1px solid var(--line); }
 .research-underlying-quote > span { grid-row: span 2; align-self: center; color: var(--amber); font-size: 14px; font-weight: 800; }
 .research-underlying-quote > strong { color: #edf3f8; font-size: 16px; }
@@ -346,6 +346,7 @@
 .research-underlying-quote > small { grid-column: 2 / -1; color: var(--dim); font-size: 7px; }
 .research-options-header > .research-metric { min-height: 70px; }
 .research-option-expiration { align-content: center; padding: 10px; border-right: 1px solid var(--line); }
+.research-option-expiration > small { display: block; margin-top: 5px; overflow: hidden; color: #5f7181; font: 6px/1.2 var(--mono); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
 .research-dte { display: grid; place-content: center; gap: 5px; text-align: center; }
 .research-dte span { color: var(--dim); font-size: 7px; }
 .research-dte strong { color: var(--blue); font-size: 15px; }
@@ -365,7 +366,7 @@
 .research-iv-side-switch button { min-width: 70px; padding: 0 10px; border: 0; border-left: 1px solid var(--line); background: transparent; color: #657382; font: 7px/1 var(--mono); font-weight: 700; letter-spacing: .07em; }
 .research-iv-side-switch button:hover { color: #b6c2cc; background: #0d151d; }
 .research-iv-side-switch button.is-active { background: rgba(59, 158, 255, .11); color: var(--blue); }
-.research-iv-surface-metrics { grid-template-columns: repeat(4, minmax(110px, 1fr)); border-bottom: 1px solid var(--line-strong); }
+.research-iv-surface-metrics { grid-template-columns: repeat(5, minmax(110px, 1fr)); border-bottom: 1px solid var(--line-strong); }
 .research-iv-surface-metrics .research-metric { min-height: 55px; }
 .research-iv-surface-state { min-height: 190px; display: grid; place-content: center; justify-items: center; gap: 9px; padding: 22px; color: #728191; font-size: 9px; letter-spacing: .06em; text-align: center; }
 .research-iv-surface-state.is-error strong { color: var(--red); }
