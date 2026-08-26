@@ -116,6 +116,7 @@ export function LiveOptionsPanel({ ticker, initialView = "chain" }: { ticker: st
 
 function TickerScopedOptionsPanel({ ticker, initialView }: { ticker: string; initialView: "chain" | "iv-surface" }) {
   const [nowIso] = useState(() => new Date().toISOString());
+  const [preferredInitialView, setPreferredInitialView] = useState(initialView);
   const [filters, setFilters] = useState<OptionChainFilters>(EMPTY_FILTERS);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [template, setTemplate] = useState<StrategyTemplate>("custom");
@@ -274,7 +275,7 @@ function TickerScopedOptionsPanel({ ticker, initialView }: { ticker: string; ini
   const effectiveStatus = effectiveMessage ? { ...status, message: effectiveMessage } : status;
   return (
     <OptionsTerminal
-      initialPrimaryView={initialView}
+      initialPrimaryView={preferredInitialView}
       status={effectiveStatus}
       underlying={underlying}
       hasContracts={chain.data.contracts.length > 0}
@@ -289,6 +290,7 @@ function TickerScopedOptionsPanel({ ticker, initialView }: { ticker: string; ini
       ivSurfaceLoading={ivSurface.loading || ivSurface.refreshing}
       ivSurfaceError={ivSurface.error?.message ?? null}
       selectedContract={selectedContract}
+      selectedContractFocusSymbol={selectedSymbol}
       selectedContractBars={contractChart.data ?? []}
       selectedManualPremium={selectedManualPremium}
       selectedBreakEven={selectedContract && selectedManualPremium !== null ? optionBreakEven(
@@ -308,6 +310,7 @@ function TickerScopedOptionsPanel({ ticker, initialView }: { ticker: string; ini
       onContractSelect={(contract: OptionContract) => setSelectedSymbol(contract.symbol)}
       onIvSurfaceRetry={ivSurface.reload}
       onIvSurfaceContractSelect={(expirationDate, contractSymbol) => {
+        setPreferredInitialView("chain");
         setFilters({ ...EMPTY_FILTERS, expirationDate });
         setSelectedSymbol(contractSymbol);
       }}

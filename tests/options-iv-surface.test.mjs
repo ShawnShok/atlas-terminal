@@ -118,10 +118,25 @@ test("options terminal exposes the interactive IV surface and API source", async
   assert.match(component, /SURFACE THROUGH/);
   assert.match(component, /EXTENDED TENOR/);
   assert.match(component, /NO INTERPOLATION/);
+  assert.match(component, /Open \$\{symbol \?\? "contributing option"\} in the option chain/);
+  assert.match(component, /Click a populated cell to open its contributing contract in the option chain/);
   assert.match(livePanel, /useResearchData<OptionIvSurfaceBundle>\("options-surface"/);
   assert.match(livePanel, /initialView = "chain"/);
+  assert.match(livePanel, /const \[preferredInitialView, setPreferredInitialView\] = useState\(initialView\)/);
+  assert.match(livePanel, /setPreferredInitialView\("chain"\)/);
+  assert.match(livePanel, /selectedContractFocusSymbol=\{selectedSymbol\}/);
   assert.match(route, /case "options-surface"/);
   assert.match(route, /expirationLimit: 12/);
   assert.match(service, /getOptionIvSurface/);
   assert.match(service, /mapWithProviderConcurrency\(requestedExpirations, 3/);
+});
+
+test("surface contract navigation focuses the exact option after the chain opens", async () => {
+  const terminal = await readFile(new URL("../components/research/OptionsTerminal.tsx", import.meta.url), "utf8");
+  assert.match(terminal, /data-contract-symbol=\{contract\.symbol\}/);
+  assert.match(terminal, /candidate\.dataset\.contractSymbol === focusContractSymbol/);
+  assert.match(terminal, /button\.scrollIntoView\(\{ behavior: "smooth", block: "center", inline: "center" \}\)/);
+  assert.match(terminal, /button\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(terminal, /setFocusRequestKey\(\(current\) => current \+ 1\)/);
+  assert.match(terminal, /setPrimaryView\("chain"\)/);
 });

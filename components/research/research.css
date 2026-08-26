@@ -404,6 +404,8 @@
 .research-option-empty { text-align: center !important; color: #303b46; }
 .research-option-unavailable { color: #7e6370; font-size: 6px; letter-spacing: .02em; }
 .research-contract-button { color: #aebac5; }
+.research-option-chain .research-contract-button.is-selected-contract { color: #f3f9ff; font-weight: 800; text-decoration: underline; text-decoration-color: var(--blue); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.research-option-chain .research-contract-button:focus-visible { border-radius: 2px; outline: 2px solid var(--blue); outline-offset: 3px; }
 .research-option-chain-key { position: sticky; left: 0; margin: 0; padding: 6px 9px; border-top: 1px solid var(--line); background: #090d12; color: #6d7883; font: 7px/1.4 var(--mono); }
 .research-options-secondary { display: grid; grid-template-columns: minmax(320px, .8fr) minmax(520px, 1.2fr); border-top: 1px solid var(--line-strong); }
 .research-options-secondary > :first-child { border-right: 1px solid var(--line-strong); }

@@ -207,6 +207,7 @@ export function ImpliedVolatilitySurface({
                             type="button"
                             style={cellStyle(cell.value, minimum, maximum)}
                             title={`${formatDate(point.expirationDate)} · ${formatCurrency(point.strikePrice)} strike · ${formatIv(cell.value)} IV · ${point.reportedSideCount}/2 sides reported`}
+                            aria-label={`Open ${symbol ?? "contributing option"} in the option chain`}
                             onClick={() => symbol && onContractSelect(point.expirationDate, symbol)}
                             disabled={!symbol}
                           >
@@ -227,7 +228,7 @@ export function ImpliedVolatilitySurface({
       {surface ? (
         <footer className="research-iv-surface-footer">
           <div className="research-iv-legend"><span>LOW {formatIv(minimum)}</span><i /><span>HIGH {formatIv(maximum)}</span></div>
-          <p>{surface.note} {surface.loadedExpirations.length}/{surface.requestedExpirations.length} representative expirations loaded · updated {formatDateTime(surface.asOf)}.</p>
+          <p>Click a populated cell to open its contributing contract in the option chain. {surface.note} {surface.loadedExpirations.length}/{surface.requestedExpirations.length} representative expirations loaded · updated {formatDateTime(surface.asOf)}.</p>
         </footer>
       ) : null}
     </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import type { AggregateBar, OptionContract, OptionIvSurfaceBundle, OptionQuoteAvailability } from "@/types";
 import {
   calculateDaysToExpiration,
@@ -72,10 +72,11 @@ interface ChainSideCellsProps {
   readonly contract: OptionContract | null;
   readonly moneyness: OptionChainRow["callMoneyness"];
   readonly showQuoteColumns: boolean;
+  readonly selected: boolean;
   readonly onSelect?: (contract: OptionContract) => void;
 }
 
-function ChainSideCells({ contract, moneyness, showQuoteColumns, onSelect }: ChainSideCellsProps) {
+function ChainSideCells({ contract, moneyness, showQuoteColumns, selected, onSelect }: ChainSideCellsProps) {
   const columnCount = showQuoteColumns ? 11 : 8;
   if (!contract) {
     return <td colSpan={columnCount} className="research-option-empty">—</td>;
@@ -91,7 +92,14 @@ function ChainSideCells({ contract, moneyness, showQuoteColumns, onSelect }: Cha
         </>
       ) : null}
       <td className={`${cellClassName} option-chain-last`} title={`${reportedLastLabel(contract)}; not an executable premium.`}>
-        <button type="button" className="research-contract-button" onClick={() => onSelect?.(contract)}>
+        <button
+          type="button"
+          className={`research-contract-button${selected ? " is-selected-contract" : ""}`}
+          data-contract-symbol={contract.symbol}
+          aria-current={selected ? "true" : undefined}
+          aria-label={`Open ${contract.symbol} contract details`}
+          onClick={() => onSelect?.(contract)}
+        >
           {quoteValue(contract.lastPrice)}
         </button>
       </td>
@@ -226,10 +234,29 @@ export interface OptionChainProps {
   readonly hasContracts: boolean;
   readonly quoteAvailability: OptionQuoteAvailability;
   readonly selectedContractSymbol: string | null;
+  readonly focusContractSymbol: string | null;
+  readonly focusRequestKey: number;
   readonly onContractSelect?: (contract: OptionContract) => void;
 }
 
-export function OptionChain({ rows, hasContracts, quoteAvailability, selectedContractSymbol, onContractSelect }: OptionChainProps) {
+export function OptionChain({ rows, hasContracts, quoteAvailability, selectedContractSymbol, focusContractSymbol, focusRequestKey, onContractSelect }: OptionChainProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const lastFocusRequest = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusContractSymbol) return;
+    const request = `${focusContractSymbol}:${focusRequestKey}`;
+    if (lastFocusRequest.current === request) return;
+    const button = [...(wrapRef.current?.querySelectorAll<HTMLButtonElement>("[data-contract-symbol]") ?? [])]
+      .find((candidate) => candidate.dataset.contractSymbol === focusContractSymbol);
+    if (!button) return;
+    lastFocusRequest.current = request;
+    const frame = window.requestAnimationFrame(() => {
+      button.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      button.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusContractSymbol, focusRequestKey, rows]);
+
   if (rows.length === 0) {
     return <EmptyResearchState
       title="NO CONTRACTS"
@@ -256,7 +283,7 @@ export function OptionChain({ rows, hasContracts, quoteAvailability, selectedCon
   ] as const;
   const sideColumnCount = columns.length;
   return (
-    <div className="research-table-wrap research-option-chain-wrap">
+    <div ref={wrapRef} className="research-table-wrap research-option-chain-wrap">
       <table className={`research-table research-option-chain${showQuoteColumns ? "" : " quotes-unavailable"}`}>
         <caption className="research-sr-only">Option chain with calls and puts by strike</caption>
         <thead>
@@ -272,9 +299,9 @@ export function OptionChain({ rows, hasContracts, quoteAvailability, selectedCon
               key={row.strikePrice}
               className={row.call?.symbol === selectedContractSymbol || row.put?.symbol === selectedContractSymbol ? "is-selected" : ""}
             >
-              <ChainSideCells contract={row.call} moneyness={row.callMoneyness} showQuoteColumns={showQuoteColumns} onSelect={onContractSelect} />
+              <ChainSideCells contract={row.call} moneyness={row.callMoneyness} showQuoteColumns={showQuoteColumns} selected={row.call?.symbol === selectedContractSymbol} onSelect={onContractSelect} />
               <th scope="row" className="research-strike">{formatCurrency(row.strikePrice)}</th>
-              <ChainSideCells contract={row.put} moneyness={row.putMoneyness} showQuoteColumns={showQuoteColumns} onSelect={onContractSelect} />
+              <ChainSideCells contract={row.put} moneyness={row.putMoneyness} showQuoteColumns={showQuoteColumns} selected={row.put?.symbol === selectedContractSymbol} onSelect={onContractSelect} />
             </tr>
           ))}
         </tbody>
@@ -541,6 +568,7 @@ export interface OptionsTerminalProps {
   readonly ivSurfaceLoading: boolean;
   readonly ivSurfaceError: string | null;
   readonly selectedContract: OptionContract | null;
+  readonly selectedContractFocusSymbol: string | null;
   readonly selectedContractBars: readonly AggregateBar[];
   readonly selectedManualPremium: number | null;
   readonly selectedBreakEven: number | null;
@@ -564,6 +592,7 @@ export interface OptionsTerminalProps {
 
 export function OptionsTerminal(props: OptionsTerminalProps) {
   const [primaryView, setPrimaryView] = useState<"chain" | "iv-surface">(props.initialPrimaryView ?? "chain");
+  const [focusRequestKey, setFocusRequestKey] = useState(0);
   const viewId = useId();
   const strikes = props.rows.map((row) => row.strikePrice);
   const strikeRange = strikes.length
@@ -588,7 +617,7 @@ export function OptionsTerminal(props: OptionsTerminalProps) {
         onFiltersChange={props.onFiltersChange}
       />
       <div id={`${viewId}-chain`} role="tabpanel" hidden={primaryView !== "chain"}>
-        <OptionChain rows={props.rows} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} selectedContractSymbol={props.selectedContract?.symbol ?? null} onContractSelect={props.onContractSelect} />
+        <OptionChain rows={props.rows} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} selectedContractSymbol={props.selectedContract?.symbol ?? null} focusContractSymbol={props.selectedContractFocusSymbol} focusRequestKey={focusRequestKey} onContractSelect={props.onContractSelect} />
       </div>
       <div id={`${viewId}-iv-surface`} role="tabpanel" hidden={primaryView !== "iv-surface"}>
         <ImpliedVolatilitySurface
@@ -599,6 +628,7 @@ export function OptionsTerminal(props: OptionsTerminalProps) {
           onRetry={props.onIvSurfaceRetry}
           onContractSelect={(expirationDate, contractSymbol) => {
             props.onIvSurfaceContractSelect(expirationDate, contractSymbol);
+            setFocusRequestKey((current) => current + 1);
             setPrimaryView("chain");
           }}
         />
