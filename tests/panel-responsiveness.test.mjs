@@ -53,3 +53,10 @@ test("the price chart has a bounded resize surface and keeps automatic resize en
   assert.match(priceChart, /autoSize:\s*true/);
   assert.doesNotMatch(priceChart, /className="stock-chart-canvas"[^>]*style=/);
 });
+
+test("red and green option spark bars stay clipped inside their chart", () => {
+  assert.match(research, /\.research-contract-chart\s*\{[^}]*position:\s*relative;[^}]*overflow:\s*hidden;/);
+  assert.match(research, /\.research-contract-chart > span\s*\{[^}]*position:\s*relative;[^}]*height:\s*100%;/);
+  assert.match(research, /\.research-contract-chart > span > i\s*\{[^}]*position:\s*absolute;[^}]*var\(--bar-offset\)[^}]*var\(--bar-height\)/);
+  assert.doesNotMatch(research, /\.research-contract-chart i\s*\{[^}]*margin-bottom:/);
+});

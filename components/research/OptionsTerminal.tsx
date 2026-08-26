@@ -326,7 +326,11 @@ export function ContractSparkBars({ bars }: ContractSparkBarsProps) {
         const height = Math.max(4, ((bar.high - bar.low) / range) * 100);
         const offset = ((bar.low - minimum) / range) * 100;
         const style = { "--bar-height": `${height}%`, "--bar-offset": `${offset}%` } as CSSProperties;
-        return <i key={`${bar.timestamp}-${bar.close}`} className={bar.close >= bar.open ? "positive" : "negative"} style={style} title={`${formatDate(bar.timestamp)} ${formatCurrency(bar.close)}`} />;
+        return (
+          <span key={`${bar.timestamp}-${bar.close}`} title={`${formatDate(bar.timestamp)} ${formatCurrency(bar.close)}`}>
+            <i className={bar.close >= bar.open ? "positive" : "negative"} style={style} />
+          </span>
+        );
       })}
     </div>
   );
