@@ -600,7 +600,7 @@ export async function GET(request: NextRequest) {
     const kind = request.nextUrl.searchParams.get("kind")?.toLowerCase() ?? "dashboard";
     const tickerParameter = request.nextUrl.searchParams.get("ticker");
     const allSymbolsRequested = request.nextUrl.searchParams.get("all") === "true";
-    const tickerRequired = ["security", "chart", "options", "financials", "timeline"].includes(kind)
+    const tickerRequired = ["security", "chart", "options", "options-surface", "financials", "timeline"].includes(kind)
       || (["news", "events", "earnings"].includes(kind) && !allSymbolsRequested);
     // Symbol-specific endpoints fail closed when `ticker` is absent. This avoids
     // a stale caller accidentally receiving NVDA data for another requested name.
@@ -970,6 +970,18 @@ export async function GET(request: NextRequest) {
         const data = mode === "mock"
           ? await mock.getOptionChain({ symbol, expiration })
           : await live!.getOptionChain({ symbol, expiration });
+        return response(data, {
+          mode,
+          source: mode === "mock" ? "mock" : "massive",
+          quality: data.quality,
+          asOf: data.asOf,
+          staleAfterMs: mode === "live" ? environment.CACHE_TTL_OPTIONS_MS * 3 : null,
+        });
+      }
+      case "options-surface": {
+        const data = mode === "mock"
+          ? await mock.getOptionIvSurface({ symbol, expirationLimit: 8 })
+          : await live!.getOptionIvSurface({ symbol, expirationLimit: 8 });
         return response(data, {
           mode,
           source: mode === "mock" ? "mock" : "massive",

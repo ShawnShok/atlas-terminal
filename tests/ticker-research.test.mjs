@@ -41,7 +41,7 @@ test("ticker changes preserve panel navigation state while syncing the ticker ed
 
 test("symbol-specific research routes reject a missing ticker instead of silently returning NVDA", () => {
   assert.match(researchRoute, /A ticker query parameter is required/);
-  assert.match(researchRoute, /const tickerRequired = \["security", "chart", "options", "financials", "timeline"\]/);
+  assert.match(researchRoute, /const tickerRequired = \["security", "chart", "options", "options-surface", "financials", "timeline"\]/);
   assert.match(researchRoute, /ticker\(tickerParameter, tickerRequired \? undefined : "NVDA"\)/);
 });
 

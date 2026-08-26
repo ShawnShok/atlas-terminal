@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ResearchService } from "@/lib/services";
+import { buildOptionIvSurface, selectIvSurfaceExpirations } from "@/lib/options";
 import type {
   AggregateBar,
   CorporateEvent,
@@ -13,6 +14,7 @@ import type {
   NewsCategory,
   NewsResearchBundle,
   OptionChainBundle,
+  OptionIvSurfaceBundle,
   OptionContract,
   SecurityResearchBundle,
   Snapshot,
@@ -269,6 +271,7 @@ function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle
   const underlyingPrice = symbolPrice(symbol);
   const expirations = ["2026-08-21", "2026-09-18", "2026-10-16", "2027-01-15"];
   const selectedExpiration = expiration && expirations.includes(expiration) ? expiration : expirations[0];
+  const termIndex = Math.max(0, expirations.indexOf(selectedExpiration));
   const baseStrike = Math.round(underlyingPrice / 5) * 5;
   const contracts: OptionContract[] = [];
   for (let offset = -8; offset <= 8; offset += 1) {
@@ -294,7 +297,7 @@ function mockOptionChain(symbol: string, expiration?: string): OptionChainBundle
         quoteAvailability: "available",
         volume: 100 + ((seed(symbol) + offset * 117 + (type === "call" ? 31 : 61)) % 7_500),
         openInterest: 400 + ((seed(symbol) + offset * 293 + (type === "call" ? 79 : 101)) % 24_000),
-        impliedVolatility: round(0.28 + Math.abs(offset) * 0.012, 4),
+        impliedVolatility: round(0.28 + termIndex * 0.018 + Math.abs(offset) * 0.012, 4),
         intrinsicValue: intrinsic,
         extrinsicValue: extrinsic,
         greeks: {
@@ -411,6 +414,14 @@ export class MockResearchService implements ResearchService {
 
   async getOptionChain(input: { symbol: string; expiration?: string }): Promise<OptionChainBundle> {
     return mockOptionChain(input.symbol.trim().toUpperCase(), input.expiration);
+  }
+
+  async getOptionIvSurface(input: { symbol: string; expirationLimit?: number }): Promise<OptionIvSurfaceBundle> {
+    const symbol = input.symbol.trim().toUpperCase();
+    const available = mockOptionChain(symbol).expirations;
+    const expirations = selectIvSurfaceExpirations(available, MOCK_AS_OF, input.expirationLimit ?? 8);
+    return buildOptionIvSurface(symbol, expirations, expirations.map((expiration) =>
+      mockOptionChain(symbol, expiration)));
   }
 
   async getFinancials(symbolInput: string): Promise<FinancialResearchBundle> {

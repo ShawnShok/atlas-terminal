@@ -1,7 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
-import type { AggregateBar, OptionContract, OptionQuoteAvailability } from "@/types";
+import { useId, useState, type CSSProperties } from "react";
+import type { AggregateBar, OptionContract, OptionIvSurfaceBundle, OptionQuoteAvailability } from "@/types";
 import {
   calculateDaysToExpiration,
   formatCompactNumber,
@@ -31,6 +31,7 @@ import type {
   StrategyTemplate,
 } from "@/lib/research/types";
 import { EmptyResearchState, MetricCell, ResearchFrame } from "./ResearchFrame";
+import { ImpliedVolatilitySurface } from "./ImpliedVolatilitySurface";
 
 const STRATEGY_TEMPLATES: readonly { value: StrategyTemplate; label: string }[] = [
   { value: "custom", label: "Custom" },
@@ -525,6 +526,9 @@ export interface OptionsTerminalProps {
   readonly quoteAvailability: OptionQuoteAvailability;
   readonly quoteNote: string;
   readonly rows: readonly OptionChainRow[];
+  readonly ivSurface: OptionIvSurfaceBundle | null;
+  readonly ivSurfaceLoading: boolean;
+  readonly ivSurfaceError: string | null;
   readonly selectedContract: OptionContract | null;
   readonly selectedContractBars: readonly AggregateBar[];
   readonly selectedManualPremium: number | null;
@@ -539,6 +543,8 @@ export interface OptionsTerminalProps {
   readonly strategyContracts: readonly OptionContract[];
   readonly onFiltersChange: (filters: OptionChainFilters) => void;
   readonly onContractSelect: (contract: OptionContract) => void;
+  readonly onIvSurfaceRetry: () => void;
+  readonly onIvSurfaceContractSelect: (expirationDate: string, contractSymbol: string) => void;
   readonly onStrategyTemplateChange: (template: StrategyTemplate) => void;
   readonly onStrategyDraftChange: (draft: StrategyLegDraft) => void;
   readonly onStrategyAddLeg: () => void;
@@ -546,6 +552,8 @@ export interface OptionsTerminalProps {
 }
 
 export function OptionsTerminal(props: OptionsTerminalProps) {
+  const [primaryView, setPrimaryView] = useState<"chain" | "iv-surface">("chain");
+  const viewId = useId();
   const strikes = props.rows.map((row) => row.strikePrice);
   const strikeRange = strikes.length
     ? [Math.min(...strikes), Math.max(...strikes)] as const
@@ -564,7 +572,26 @@ export function OptionsTerminal(props: OptionsTerminalProps) {
         strikeRange={strikeRange}
         onFiltersChange={props.onFiltersChange}
       />
-      <OptionChain rows={props.rows} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} selectedContractSymbol={props.selectedContract?.symbol ?? null} onContractSelect={props.onContractSelect} />
+      <div className="research-options-view-tabs" role="tablist" aria-label="Options data view">
+        <button type="button" role="tab" aria-selected={primaryView === "chain"} aria-controls={`${viewId}-chain`} className={primaryView === "chain" ? "is-active" : ""} onClick={() => setPrimaryView("chain")}>OPTION CHAIN</button>
+        <button type="button" role="tab" aria-selected={primaryView === "iv-surface"} aria-controls={`${viewId}-iv-surface`} className={primaryView === "iv-surface" ? "is-active" : ""} onClick={() => setPrimaryView("iv-surface")}>IV SURFACE</button>
+      </div>
+      <div id={`${viewId}-chain`} role="tabpanel" hidden={primaryView !== "chain"}>
+        <OptionChain rows={props.rows} hasContracts={props.hasContracts} quoteAvailability={props.quoteAvailability} selectedContractSymbol={props.selectedContract?.symbol ?? null} onContractSelect={props.onContractSelect} />
+      </div>
+      <div id={`${viewId}-iv-surface`} role="tabpanel" hidden={primaryView !== "iv-surface"}>
+        <ImpliedVolatilitySurface
+          surface={props.ivSurface}
+          loading={props.ivSurfaceLoading}
+          error={props.ivSurfaceError}
+          nowIso={props.nowIso}
+          onRetry={props.onIvSurfaceRetry}
+          onContractSelect={(expirationDate, contractSymbol) => {
+            props.onIvSurfaceContractSelect(expirationDate, contractSymbol);
+            setPrimaryView("chain");
+          }}
+        />
+      </div>
       <div className="research-options-secondary">
         <OptionContractDetail contract={props.selectedContract} underlyingPrice={props.underlying.quote.lastPrice} manualPremium={props.selectedManualPremium} breakEven={props.selectedBreakEven} quoteNote={props.quoteNote} bars={props.selectedContractBars} />
         <OptionActivityPanel metrics={props.activityMetrics} candidates={props.activityCandidates} rankings={props.activityRankings} strikeDistribution={props.strikeDistribution} expirationDistribution={props.expirationDistribution} onContractSelect={props.onContractSelect} />

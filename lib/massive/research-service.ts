@@ -12,8 +12,10 @@ import type {
   BenzingaNewsQuery,
   CorporateEventsQuery,
   OptionChainQuery,
+  OptionIvSurfaceQuery,
   ResearchService,
 } from "@/lib/services";
+import { buildOptionIvSurface, selectIvSurfaceExpirations } from "@/lib/options";
 import type {
   EventsResearchBundle,
   FinancialResearchBundle,
@@ -21,6 +23,7 @@ import type {
   MarketSnapshotRow,
   NewsResearchBundle,
   OptionChainBundle,
+  OptionIvSurfaceBundle,
   TickerSearchResult,
 } from "@/types";
 
@@ -55,6 +58,7 @@ export type {
   BenzingaNewsQuery,
   CorporateEventsQuery,
   OptionChainQuery,
+  OptionIvSurfaceQuery,
 } from "@/lib/services";
 
 const tickerSchema = z
@@ -108,6 +112,23 @@ function normalizeSymbols(values: readonly string[]): readonly string[] {
     throw new AppError("VALIDATION_ERROR", "At most 100 tickers may be requested together.");
   }
   return unique;
+}
+
+async function mapWithProviderConcurrency<Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  worker: (value: Input) => Promise<Output>,
+): Promise<readonly Output[]> {
+  const results = new Array<Output>(values.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(values[index]);
+    }
+  }));
+  return results;
 }
 
 export class MassiveResearchService implements ResearchService {
@@ -306,12 +327,47 @@ export class MassiveResearchService implements ResearchService {
     const expiration = input.expiration
       ? normalizeDate(input.expiration, "expiration")
       : expirations[0];
+    const bundle = await this.#getOptionChainForExpiration(symbol, expiration, input.strikeMin, input.strikeMax);
+    return { ...bundle, expirations };
+  }
+
+  async getOptionIvSurface(input: OptionIvSurfaceQuery): Promise<OptionIvSurfaceBundle> {
+    const symbol = normalizeTicker(input.symbol);
+    const limit = input.expirationLimit ?? 8;
+    const expirations = await this.getOptionExpirations(symbol);
+    const requestedExpirations = selectIvSurfaceExpirations(expirations, new Date().toISOString(), limit);
+    const settled = await mapWithProviderConcurrency(requestedExpirations, 3, async (expiration) => {
+      try {
+        return {
+          status: "fulfilled" as const,
+          value: await this.#getOptionChainForExpiration(symbol, expiration),
+        };
+      } catch (reason) {
+        return { status: "rejected" as const, reason };
+      }
+    });
+    const chains = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    if (requestedExpirations.length > 0 && chains.length === 0) {
+      const failure = settled.find((result) => result.status === "rejected");
+      throw failure && failure.status === "rejected"
+        ? failure.reason
+        : new AppError("UPSTREAM_UNAVAILABLE", "The implied-volatility surface is unavailable.");
+    }
+    return buildOptionIvSurface(symbol, requestedExpirations, chains);
+  }
+
+  async #getOptionChainForExpiration(
+    symbol: string,
+    expiration: string | undefined,
+    strikeMin?: number,
+    strikeMax?: number,
+  ): Promise<OptionChainBundle> {
     const response = await this.#client.request({
       path: `/v3/snapshot/options/${encodeURIComponent(symbol)}`,
       query: {
         expiration_date: expiration,
-        "strike_price.gte": input.strikeMin,
-        "strike_price.lte": input.strikeMax,
+        "strike_price.gte": strikeMin,
+        "strike_price.lte": strikeMax,
         limit: 250,
         sort: "strike_price",
         order: "asc",
@@ -329,8 +385,7 @@ export class MassiveResearchService implements ResearchService {
       results: pages.flatMap((page) => page.results ?? []),
     };
     const contractsComplete = !pages.at(-1)?.next_url;
-    const bundle = adaptOptionChain(combined, symbol, expiration, contractsComplete);
-    return { ...bundle, expirations };
+    return adaptOptionChain(combined, symbol, expiration, contractsComplete);
   }
 
   async getFinancials(symbolInput: string): Promise<FinancialResearchBundle> {

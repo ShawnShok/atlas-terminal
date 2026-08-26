@@ -167,6 +167,36 @@ export interface OptionChainBundle {
   readonly quoteNote: string;
 }
 
+export type OptionIvSurfaceSide = "blended" | "call" | "put";
+
+/** One listed-strike observation used by the implied-volatility surface. */
+export interface OptionIvSurfacePoint {
+  readonly expirationDate: string;
+  readonly strikePrice: number;
+  /** Strike divided by spot, minus one. Null when the provider omitted spot. */
+  readonly moneyness: number | null;
+  readonly callImpliedVolatility: number | null;
+  readonly putImpliedVolatility: number | null;
+  /** Mean of the reported call/put observations; a single reported side remains usable. */
+  readonly blendedImpliedVolatility: number | null;
+  readonly callContractSymbol: string | null;
+  readonly putContractSymbol: string | null;
+  readonly reportedSideCount: number;
+}
+
+/** Bounded, provider-neutral term/strike observations for the IV surface. */
+export interface OptionIvSurfaceBundle {
+  readonly underlyingSymbol: string;
+  readonly underlyingPrice: number | null;
+  readonly requestedExpirations: readonly string[];
+  readonly loadedExpirations: readonly string[];
+  readonly points: readonly OptionIvSurfacePoint[];
+  readonly contractsComplete: boolean;
+  readonly asOf: string;
+  readonly quality: DataQuality;
+  readonly note: string;
+}
+
 export type FinancialTimeframe = "annual" | "quarterly" | "ttm";
 
 export interface NormalizedFinancialPeriod {

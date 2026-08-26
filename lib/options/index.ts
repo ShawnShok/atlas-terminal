@@ -17,6 +17,11 @@ export {
   type PutCallRatios,
 } from "./chain-analytics";
 export {
+  buildOptionIvSurface,
+  optionIvSurfaceValue,
+  selectIvSurfaceExpirations,
+} from "./iv-surface";
+export {
   analyzeStrategyPayoff,
   combineStrategyGreeks,
   createPayoffCurve,

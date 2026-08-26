@@ -34,7 +34,7 @@ const COMMANDS: CommandItem[] = [
   { id: "scan-earnings-soon", command: "SCAN EARNINGS SOON", title: "Earnings Soon", detail: "Reported earnings catalysts within 14 days", group: "FUNCTIONS", source: "ATLAS", keywords: "scanner earnings event" },
   { id: "all-news", command: "NEWS", title: "News terminal", detail: "Open the multi-ticker Benzinga feed", group: "FUNCTIONS", source: "ATLAS", keywords: "news benzinga headlines all" },
   { id: "news", command: "NVDA NEWS", title: "Ticker news", detail: "Benzinga ticker headline feed", group: "FUNCTIONS", source: "ATLAS", keywords: "news benzinga headlines" },
-  { id: "options", command: "NVDA OPT", title: "Options terminal", detail: "Chain, Greeks, and research analytics", group: "FUNCTIONS", source: "ATLAS", keywords: "options chain opt greeks" },
+  { id: "options", command: "NVDA OPT", title: "Options terminal", detail: "Chain, IV surface, Greeks, and research analytics", group: "FUNCTIONS", source: "ATLAS", keywords: "options chain opt implied volatility iv surface greeks" },
   { id: "events", command: "NVDA EVENTS", title: "Corporate events", detail: "TMX catalyst timeline", group: "FUNCTIONS", source: "ATLAS", keywords: "events earnings calendar tmx" },
   { id: "all-events", command: "EVENTS", title: "Event calendar", detail: "Open the multi-ticker TMX calendar", group: "FUNCTIONS", source: "ATLAS", keywords: "events corporate calendar tmx" },
   { id: "financials", command: "NVDA FIN", title: "Company financials", detail: "Statements, ratios, and calculated growth", group: "FUNCTIONS", source: "ATLAS", keywords: "fundamentals statements ratios" },

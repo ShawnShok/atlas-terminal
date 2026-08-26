@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
+import { loadTypeScriptModule } from "./helpers/load-typescript-module.mjs";
 
 const sourceUrl = new URL("../lib/mock/research-service.ts", import.meta.url);
-const source = (await readFile(sourceUrl, "utf8")).replace('import "server-only";', "");
+const ivSurface = await loadTypeScriptModule(new URL("../lib/options/iv-surface.ts", import.meta.url));
+const source = (await readFile(sourceUrl, "utf8"))
+  .replace('import "server-only";', "")
+  .replace(
+    'import { buildOptionIvSurface, selectIvSurfaceExpirations } from "@/lib/options";',
+    "const { buildOptionIvSurface, selectIvSurfaceExpirations } = globalThis.__atlasIvSurfaceTest;",
+  );
+globalThis.__atlasIvSurfaceTest = ivSurface;
 const transpiled = ts.transpileModule(source, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
@@ -88,4 +96,13 @@ test("mock news honors publication bounds, category, keyword, ticker, and limit"
 
   const limited = await service.getBenzingaNews({ limit: 2 });
   assert.equal(limited.articles.length, 2);
+});
+
+test("mock IV surface spans expirations with reported observations", async () => {
+  const service = new MockResearchService();
+  const result = await service.getOptionIvSurface({ symbol: " nvda ", expirationLimit: 4 });
+  assert.equal(result.underlyingSymbol, "NVDA");
+  assert.equal(result.loadedExpirations.length, 4);
+  assert.ok(result.points.length > 40);
+  assert.equal(result.contractsComplete, true);
 });

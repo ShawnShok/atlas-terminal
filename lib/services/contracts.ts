@@ -10,6 +10,7 @@ import type {
   NewsArticle,
   NewsResearchBundle,
   OptionChainBundle,
+  OptionIvSurfaceBundle,
   OptionContract,
   Snapshot,
   TickerDetails,
@@ -92,8 +93,14 @@ export interface OptionChainQuery {
   readonly strikeMax?: number;
 }
 
+export interface OptionIvSurfaceQuery {
+  readonly symbol: string;
+  readonly expirationLimit?: number;
+}
+
 export interface OptionsResearchService {
   getOptionChain(input: OptionChainQuery): Promise<OptionChainBundle>;
+  getOptionIvSurface(input: OptionIvSurfaceQuery): Promise<OptionIvSurfaceBundle>;
 }
 
 /** Common live/mock research surface currently consumed by the research API. */

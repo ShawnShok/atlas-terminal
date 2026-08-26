@@ -351,6 +351,42 @@
 .research-dte strong { color: var(--blue); font-size: 15px; }
 .research-chain-quick-filters { grid-column: 1 / -1; flex-wrap: wrap; border-top: 1px solid var(--line); }
 .research-chain-quick-filters label { flex: 1 1 88px; }
+.research-options-view-tabs { height: 32px; display: flex; align-items: stretch; border-bottom: 1px solid var(--line-strong); background: #090d12; }
+.research-options-view-tabs button { min-width: 128px; padding: 0 13px; border: 0; border-right: 1px solid var(--line); border-bottom: 2px solid transparent; background: transparent; color: #657382; font: 8px/1 var(--mono); font-weight: 700; letter-spacing: .08em; }
+.research-options-view-tabs button:hover { color: #b5c0ca; background: #0d151d; }
+.research-options-view-tabs button.is-active { border-bottom-color: var(--blue); background: #0d1721; color: #c8d7e4; }
+.research-options-view-tabs + [role="tabpanel"] { min-width: 0; }
+.research-iv-surface { border-top: 0; }
+.research-iv-surface-header { min-height: 58px; }
+.research-iv-surface-header > div:first-child small { display: block; margin-top: 5px; color: #617181; font-size: 6px; letter-spacing: .06em; }
+.research-iv-side-switch { display: flex; align-self: stretch; }
+.research-iv-side-switch button { min-width: 70px; padding: 0 10px; border: 0; border-left: 1px solid var(--line); background: transparent; color: #657382; font: 7px/1 var(--mono); font-weight: 700; letter-spacing: .07em; }
+.research-iv-side-switch button:hover { color: #b6c2cc; background: #0d151d; }
+.research-iv-side-switch button.is-active { background: rgba(59, 158, 255, .11); color: var(--blue); }
+.research-iv-surface-metrics { grid-template-columns: repeat(4, minmax(110px, 1fr)); border-bottom: 1px solid var(--line-strong); }
+.research-iv-surface-metrics .research-metric { min-height: 55px; }
+.research-iv-surface-state { min-height: 190px; display: grid; place-content: center; justify-items: center; gap: 9px; padding: 22px; color: #728191; font-size: 9px; letter-spacing: .06em; text-align: center; }
+.research-iv-surface-state.is-error strong { color: var(--red); }
+.research-iv-surface-state.is-error span { max-width: 520px; color: #9c7b82; font: 9px/1.5 var(--sans); }
+.research-iv-surface-wrap { max-height: clamp(250px, 55cqh, 520px); overflow: auto; background: #080d12; scrollbar-color: #263748 #090d12; }
+.research-iv-surface-table { width: 100%; min-width: 810px; border-spacing: 0; table-layout: fixed; font-size: 7px; }
+.research-iv-surface-table th,
+.research-iv-surface-table td { height: 49px; padding: 0; border-right: 1px solid #17222d; border-bottom: 1px solid #17222d; text-align: center; }
+.research-iv-surface-table thead th { position: sticky; top: 0; z-index: 3; height: 27px; background: #0c131a; color: #6d7d8c; font-size: 7px; letter-spacing: .05em; }
+.research-iv-surface-table thead th:first-child { left: 0; z-index: 5; width: 102px; }
+.research-iv-surface-table tbody > tr > th { position: sticky; left: 0; z-index: 2; width: 102px; padding: 6px 8px; background: #0b1219; text-align: left; }
+.research-iv-surface-table tbody > tr > th strong { display: block; color: #a8b6c2; font-size: 8px; }
+.research-iv-surface-table tbody > tr > th small { display: block; margin-top: 4px; color: var(--dim); font-size: 6px; }
+.research-iv-surface-table td > button { width: 100%; height: 100%; display: grid; place-content: center; gap: 4px; padding: 3px; border: 1px solid var(--iv-cell-border); background: var(--iv-cell-background); color: #edf5fb; font-family: var(--mono); transition: filter 120ms ease, transform 120ms ease; }
+.research-iv-surface-table td > button:hover,
+.research-iv-surface-table td > button:focus-visible { position: relative; z-index: 1; filter: brightness(1.25); transform: scale(.96); outline: 1px solid #d7e7f3; outline-offset: -2px; }
+.research-iv-surface-table td > button strong { font-size: 9px; }
+.research-iv-surface-table td > button small { color: rgba(235, 244, 251, .7); font-size: 6px; }
+.research-iv-surface-table td > span { color: #34404b; }
+.research-iv-surface-footer { min-height: 43px; display: grid; grid-template-columns: minmax(220px, auto) minmax(0, 1fr); align-items: center; gap: 12px; padding: 7px 10px; border-top: 1px solid var(--line); background: #090d12; }
+.research-iv-surface-footer p { margin: 0; color: #6f7b86; font: 7px/1.45 var(--mono); }
+.research-iv-legend { display: grid; grid-template-columns: auto minmax(90px, 150px) auto; align-items: center; gap: 7px; color: #71808d; font-size: 6px; }
+.research-iv-legend i { height: 6px; background: linear-gradient(90deg, hsl(210 66% 16%), hsl(120 66% 22%), hsl(32 66% 28%)); }
 .research-option-chain-wrap { max-height: clamp(180px, 45cqh, 430px); }
 .research-option-chain { min-width: 1810px; text-align: right; }
 .research-option-chain.quotes-unavailable { min-width: 1320px; }
@@ -666,6 +702,7 @@
   .research-options-header > .research-dte { grid-row: 2; }
   .research-pattern-grid { grid-template-columns: minmax(0, 1fr); }
   .research-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .research-iv-surface-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-option-chain,
   .research-option-chain.quotes-unavailable {
     width: 100%;
@@ -698,6 +735,10 @@
   .research-contract-detail h3 { font-size: 14px; }
 
   .research-options-header { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .research-iv-surface-header { align-items: flex-start; flex-wrap: wrap; }
+  .research-iv-side-switch { width: 100%; min-height: 30px; }
+  .research-iv-side-switch button { flex: 1; border-top: 1px solid var(--line); }
+  .research-iv-surface-footer { grid-template-columns: minmax(0, 1fr); }
   .research-underlying-quote,
   .research-chain-quick-filters { grid-column: 1 / -1; }
   .research-options-header > .research-option-expiration,
@@ -767,6 +808,8 @@
   .research-action-button,
   .research-primary-button { flex: 1; }
   .research-subpanel-header { align-items: flex-start; flex-wrap: wrap; }
+  .research-options-view-tabs button { min-width: 0; flex: 1; }
+  .research-iv-surface-metrics { grid-template-columns: minmax(0, 1fr); }
   .research-scanner-name { width: 100%; }
   .research-builder-actions { flex-wrap: wrap; }
   .research-builder-actions > span { flex: 1 0 100%; }

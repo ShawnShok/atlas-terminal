@@ -27,7 +27,7 @@ import {
   type StrategyOptionLeg,
 } from "@/lib/options";
 import { useResearchData } from "@/hooks/useResearchData";
-import type { AggregateBar, OptionChainBundle, OptionContract, Quote, SecurityResearchBundle } from "@/types";
+import type { AggregateBar, OptionChainBundle, OptionContract, OptionIvSurfaceBundle, Quote, SecurityResearchBundle } from "@/types";
 
 import { DataState } from "./DataState";
 import { researchStatus } from "./research-status";
@@ -125,6 +125,9 @@ function TickerScopedOptionsPanel({ ticker }: { ticker: string }) {
     ticker,
     expiration: filters.expirationDate || undefined,
   }, { refreshMs: 30_000, retainMs: 20_000 });
+  const ivSurface = useResearchData<OptionIvSurfaceBundle>("options-surface", {
+    ticker,
+  }, { refreshMs: 120_000, retainMs: 60_000 });
   const security = useResearchData<SecurityResearchBundle>("security", { ticker, range: "1M" }, { refreshMs: 15_000, retainMs: 10_000 });
 
   const underlyingPrice = chain.data?.underlyingPrice ?? security.data?.snapshot.quote.lastPrice ?? 0;
@@ -281,6 +284,9 @@ function TickerScopedOptionsPanel({ ticker }: { ticker: string }) {
       quoteAvailability={chain.data.quoteAvailability}
       quoteNote={chain.data.quoteNote}
       rows={rows}
+      ivSurface={ivSurface.data}
+      ivSurfaceLoading={ivSurface.loading || ivSurface.refreshing}
+      ivSurfaceError={ivSurface.error?.message ?? null}
       selectedContract={selectedContract}
       selectedContractBars={contractChart.data ?? []}
       selectedManualPremium={selectedManualPremium}
@@ -299,6 +305,11 @@ function TickerScopedOptionsPanel({ ticker }: { ticker: string }) {
       strategyContracts={contracts}
       onFiltersChange={setFilters}
       onContractSelect={(contract: OptionContract) => setSelectedSymbol(contract.symbol)}
+      onIvSurfaceRetry={ivSurface.reload}
+      onIvSurfaceContractSelect={(expirationDate, contractSymbol) => {
+        setFilters({ ...EMPTY_FILTERS, expirationDate });
+        setSelectedSymbol(contractSymbol);
+      }}
       onStrategyTemplateChange={setTemplate}
       onStrategyDraftChange={setDraft}
       onStrategyAddLeg={() => {

@@ -17,6 +17,7 @@ export type {
   MarketDataService,
   NewsQuery,
   OptionChainQuery,
+  OptionIvSurfaceQuery,
   OptionsResearchService,
   ResearchService,
   StockMarketService,
