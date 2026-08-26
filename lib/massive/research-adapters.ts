@@ -420,7 +420,7 @@ export function adaptOptionChain(
       ? "Reported bid/ask snapshots are descriptive and may be delayed; they are not executable prices."
       : quoteAvailability === "partial"
         ? "Option quotes are incomplete or crossed. Missing bid/ask fields and invalid midpoints remain unavailable."
-        : "NO OPTION QUOTES AVAILABLE — bid, ask, and midpoint are not included in the returned entitlement data.",
+        : "NO BID / ASK OPTION QUOTES AVAILABLE — reported last trades, day closes, volume, open interest, IV, and Greeks remain shown when provided.",
   };
 }
 
@@ -492,6 +492,16 @@ const RATIO_LABELS: Readonly<Record<string, string>> = {
   return_on_equity: "Return on equity",
 };
 
+const PERCENT_RATIOS = new Set([
+  "dividend_yield",
+  "free_cash_flow_margin",
+  "gross_margin",
+  "net_margin",
+  "operating_margin",
+  "return_on_assets",
+  "return_on_equity",
+]);
+
 export function adaptFinancialRatios(
   response: MassiveRatiosResponse,
 ): readonly FinancialRatioPoint[] {
@@ -501,5 +511,6 @@ export function adaptFinancialRatios(
     key,
     label,
     value: typeof raw[key] === "number" && Number.isFinite(raw[key]) ? raw[key] : null,
+    format: PERCENT_RATIOS.has(key) ? "percent" as const : "ratio" as const,
   }));
 }

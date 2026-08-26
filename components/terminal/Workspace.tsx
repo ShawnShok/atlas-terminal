@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import type { PanelView, WorkspaceCommandTarget, WorkspaceNode } from "@/lib/workspace/model";
+import type { PanelResearchScope, PanelView, WorkspaceCommandTarget, WorkspaceNode } from "@/lib/workspace/model";
 import { getPanels } from "@/lib/workspace/model";
 import { WorkspacePanel } from "./WorkspacePanel";
 
@@ -13,6 +13,7 @@ interface WorkspaceProps {
   recentTickers: readonly string[];
   comparisonSymbols?: readonly string[];
   commandTarget?: WorkspaceCommandTarget | null;
+  researchScopeByPanel: Readonly<Record<string, PanelResearchScope>>;
   onActivate: (panelId: string) => void;
   onClose: (panelId: string) => void;
   onMaximize: (panelId: string | null) => void;
@@ -92,6 +93,7 @@ function WorkspaceNodeView({
         recentTickers={props.recentTickers}
         comparisonSymbols={props.comparisonSymbols}
         commandTarget={props.commandTarget}
+        researchScope={props.researchScopeByPanel[node.id] ?? "ticker"}
         onActivate={() => props.onActivate(node.id)}
         onClose={() => props.onClose(node.id)}
         onMaximize={() => props.onMaximize(props.maximizedPanelId === node.id ? null : node.id)}

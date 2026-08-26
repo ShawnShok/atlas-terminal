@@ -177,11 +177,14 @@ export function PriceChart({
         const enabledSeries = indicatorSeries.filter((series) =>
           settings.activeIndicators.includes(series.indicator),
         );
-        const separatePane = enabledSeries.some((series) => series.pane === "separate")
-          ? nextPane
-          : null;
+        const separatePanes = new Map<ChartIndicatorSeries["indicator"], number>();
         for (const series of enabledSeries) {
-          const paneIndex = series.pane === "separate" ? separatePane ?? 0 : 0;
+          if (series.pane !== "separate" || separatePanes.has(series.indicator)) continue;
+          separatePanes.set(series.indicator, nextPane);
+          nextPane += 1;
+        }
+        for (const series of enabledSeries) {
+          const paneIndex = series.pane === "separate" ? separatePanes.get(series.indicator) ?? 0 : 0;
           const data = indicatorData(series.points, visibleTimes);
           if (series.kind === "histogram") {
             const api = chart.addSeries(library.HistogramSeries, {

@@ -314,6 +314,13 @@ export function LiveWatchlistPanel({
       ? { ...result.data, name: watchlists.selected.name, symbols }
       : { name: watchlists.selected.name, symbols, snapshots: [], quotes: [] }
     : null;
+  const watchlistStatus = statusFrom(
+    result.data ?? (symbols.length === 0 ? bundle : null),
+    result.meta,
+    result.loading,
+    result.error,
+    symbols.length === 0 ? "Add a ticker to this watchlist." : undefined,
+  );
   const handleSort = (key: WatchlistSortKey) => {
     if (sortKey === key) setSortDirection((current) => current === "ascending" ? "descending" : "ascending");
     else {
@@ -388,7 +395,7 @@ export function LiveWatchlistPanel({
         {watchlists.message ? <span>{watchlists.message}</span> : null}
       </div>
       <Watchlist
-        status={statusFrom(bundle, result.meta, result.loading, result.error, symbols.length === 0 ? "Add a ticker to this watchlist." : undefined)}
+        status={watchlistStatus}
         bundle={bundle}
         sortKey={sortKey}
         sortDirection={sortDirection}

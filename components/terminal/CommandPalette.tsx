@@ -98,6 +98,8 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
 
   if (!open) return null;
 
+  const selectedIndex = Math.min(activeIndex, Math.max(0, results.length - 1));
+
   const run = (command?: string) => {
     const value = (command ?? query).trim();
     if (!value) return;
@@ -128,15 +130,15 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
               if (event.key === "Escape") onClose();
               if (event.key === "ArrowDown") {
                 event.preventDefault();
-                setActiveIndex((index) => Math.min(index + 1, results.length - 1));
+                setActiveIndex(Math.min(selectedIndex + 1, Math.max(0, results.length - 1)));
               }
               if (event.key === "ArrowUp") {
                 event.preventDefault();
-                setActiveIndex((index) => Math.max(index - 1, 0));
+                setActiveIndex(Math.max(selectedIndex - 1, 0));
               }
               if (event.key === "Enter") {
                 event.preventDefault();
-                run(results[activeIndex]?.command ?? query);
+                run(results[selectedIndex]?.command ?? query);
               }
             }}
           />
@@ -159,10 +161,10 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps) {
             return (
               <button
                 key={item.id}
-                className={index === activeIndex ? "command-result is-selected" : "command-result"}
+                className={index === selectedIndex ? "command-result is-selected" : "command-result"}
                 type="button"
                 role="option"
-                aria-selected={index === activeIndex}
+                aria-selected={index === selectedIndex}
                 onPointerMove={() => setActiveIndex(index)}
                 onClick={() => run(item.command)}
               >

@@ -51,7 +51,7 @@ test("a loaded option chain remains visible when the supplemental security reque
 });
 
 test("options UI exposes quote availability, warnings, and supported filters", () => {
-  assert.match(terminalSource, /NO OPTION QUOTES AVAILABLE/);
+  assert.match(terminalSource, /BID \/ ASK QUOTES UNAVAILABLE — CHAIN DATA IS SHOWN/);
   assert.match(terminalSource, /NO LISTED OPTION CONTRACTS RETURNED/);
   assert.match(terminalSource, /NO EXPIRATIONS/);
   assert.match(terminalSource, /LIVE BID\/ASK QUOTES NOT INCLUDED/);

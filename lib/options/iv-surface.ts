@@ -1,4 +1,5 @@
 import type {
+  DataQuality,
   OptionChainBundle,
   OptionIvSurfaceBundle,
   OptionIvSurfacePoint,
@@ -46,6 +47,16 @@ export function selectIvSurfaceExpirations(
 function latestTimestamp(chains: readonly OptionChainBundle[]): string {
   const values = chains.map(({ asOf }) => Date.parse(asOf)).filter(Number.isFinite);
   return values.length ? new Date(Math.max(...values)).toISOString() : new Date().toISOString();
+}
+
+function surfaceQuality(chains: readonly OptionChainBundle[]): DataQuality {
+  const qualities = chains.map(({ quality }) => quality);
+  if (qualities.length === 0 || qualities.includes("unknown")) return "unknown";
+  if (qualities.includes("delayed")) return "delayed";
+  if (qualities.includes("indicative")) return "indicative";
+  if (qualities.includes("historical")) return "historical";
+  if (qualities.includes("end-of-day")) return "end-of-day";
+  return qualities.every((quality) => quality === "live") ? "live" : "unknown";
 }
 
 /** Aggregates reported call/put IV at each listed strike without interpolation. */
@@ -111,7 +122,7 @@ export function buildOptionIvSurface(
     });
   const loadedAllRequested = requestedExpirations.every((expiration) => loadedExpirations.includes(expiration));
   const contractsComplete = loadedAllRequested && chains.every((chain) => chain.contractsComplete);
-  const quality = chains[0]?.quality ?? "unknown";
+  const quality = surfaceQuality(chains);
   const note = points.length === 0
     ? "No provider-reported implied-volatility observations were returned for the selected maturities."
     : contractsComplete
@@ -137,4 +148,16 @@ export function optionIvSurfaceValue(
   if (side === "call") return point.callImpliedVolatility;
   if (side === "put") return point.putImpliedVolatility;
   return point.blendedImpliedVolatility;
+}
+
+/** Returns a contract whose reported IV actually contributes to the selected surface cell. */
+export function optionIvSurfaceContractSymbol(
+  point: OptionIvSurfacePoint,
+  side: OptionIvSurfaceSide,
+): string | null {
+  if (side === "call") return point.callImpliedVolatility === null ? null : point.callContractSymbol;
+  if (side === "put") return point.putImpliedVolatility === null ? null : point.putContractSymbol;
+  if (point.callImpliedVolatility !== null && point.callContractSymbol) return point.callContractSymbol;
+  if (point.putImpliedVolatility !== null && point.putContractSymbol) return point.putContractSymbol;
+  return null;
 }

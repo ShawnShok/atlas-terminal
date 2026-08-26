@@ -3,7 +3,7 @@
 import { ArrowUpRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import type { PanelView, WorkspaceCommandTarget } from "@/lib/workspace/model";
+import type { PanelResearchScope, PanelView, WorkspaceCommandTarget } from "@/lib/workspace/model";
 
 import { LiveAnalyticsPanel } from "./LiveAnalyticsPanel";
 import { LiveEventsPanel } from "./LiveEventsPanel";
@@ -32,6 +32,7 @@ interface PanelContentProps {
   readonly recentTickers: readonly string[];
   readonly comparisonSymbols?: readonly string[];
   readonly commandTarget?: WorkspaceCommandTarget | null;
+  readonly researchScope: PanelResearchScope;
   readonly onTickerChange: (ticker: string) => void;
   readonly onViewChange: (view: PanelView) => void;
 }
@@ -72,6 +73,7 @@ export function PanelContent({
   recentTickers,
   comparisonSymbols,
   commandTarget,
+  researchScope,
   onTickerChange,
   onViewChange,
 }: PanelContentProps) {
@@ -128,18 +130,19 @@ export function PanelContent({
       content = <LiveWatchlistPanel commandTarget={commandTarget} onTickerSelect={openSecurity} onResearchSelect={openWatchlistResearch} />;
       break;
     case "news":
-      content = <LiveNewsPanel ticker={ticker} initialArticleId={activeWatchlistResearch?.view === "news" ? activeWatchlistResearch.itemId : null} onTickerSelect={openSecurity} />;
+      content = <LiveNewsPanel ticker={ticker} allSymbols={researchScope === "all"} initialArticleId={activeWatchlistResearch?.view === "news" ? activeWatchlistResearch.itemId : null} onTickerSelect={openSecurity} />;
       break;
     case "events":
       content = <LiveEventsPanel
         ticker={ticker}
+        allSymbols={researchScope === "all"}
         initialEventId={activeWatchlistResearch?.view === "events" ? activeWatchlistResearch.itemId : null}
         initialEventStartsAt={activeWatchlistResearch?.view === "events" ? activeWatchlistResearch.startsAt : null}
         onTickerSelect={openSecurity}
       />;
       break;
     case "earnings":
-      content = <LiveEventsPanel ticker={ticker} earningsOnly onTickerSelect={openSecurity} />;
+      content = <LiveEventsPanel ticker={ticker} allSymbols={researchScope === "all"} earningsOnly onTickerSelect={openSecurity} />;
       break;
     case "options":
       content = <LiveOptionsPanel ticker={ticker} />;
@@ -188,7 +191,7 @@ export function PanelContent({
       content = <LiveStockPanel ticker={ticker} view="overview" onTickerSelect={onTickerChange} />;
   }
 
-  if (!TICKER_RESEARCH_VIEWS.has(view)) return content;
+  if (!TICKER_RESEARCH_VIEWS.has(view) || (researchScope === "all" && (view === "news" || view === "events"))) return content;
   return (
     <div className="ticker-research-surface">
       <TickerResearchNav ticker={ticker} activeView={view} onViewChange={onViewChange} />

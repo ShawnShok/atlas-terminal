@@ -158,7 +158,7 @@ function comparisonView(bundle: ComparisonResearchBundle | null): ComparisonView
     metrics.push({
       id: "ratio-" + key,
       label: descriptor?.label.toUpperCase() ?? key.toUpperCase(),
-      format: "ratio",
+      format: descriptor?.format === "percent" ? "percent" : "ratio",
       preferred: "neutral",
       values: Object.fromEntries(bundle.securities.map((security) => [
         security.symbol,

@@ -20,6 +20,9 @@ export type PanelView =
   | "system"
   | "shortcuts";
 
+/** Whether a research module follows the panel ticker or opens its market-wide feed. */
+export type PanelResearchScope = "ticker" | "all";
+
 export interface WorkspacePanel {
   type: "panel";
   id: string;

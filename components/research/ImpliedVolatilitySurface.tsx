@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 
-import { optionIvSurfaceValue } from "@/lib/options";
+import { optionIvSurfaceContractSymbol, optionIvSurfaceValue } from "@/lib/options";
 import { calculateDaysToExpiration, formatCurrency, formatDate, formatDateTime } from "@/lib/research";
 import type {
   OptionIvSurfaceBundle,
@@ -98,12 +98,6 @@ function cellStyle(value: number, minimum: number, maximum: number): CSSProperti
     "--iv-cell-background": `hsl(${hue.toFixed(0)} 66% ${lightness.toFixed(0)}%)`,
     "--iv-cell-border": `hsl(${hue.toFixed(0)} 70% ${(lightness + 13).toFixed(0)}%)`,
   } as CSSProperties;
-}
-
-function contractSymbol(point: OptionIvSurfacePoint, side: OptionIvSurfaceSide): string | null {
-  if (side === "call") return point.callContractSymbol;
-  if (side === "put") return point.putContractSymbol;
-  return point.callContractSymbol ?? point.putContractSymbol;
 }
 
 export interface ImpliedVolatilitySurfaceProps {
@@ -204,7 +198,7 @@ export function ImpliedVolatilitySurface({
                   </th>
                   {row.cells.map((cell) => {
                     const point = cell.point;
-                    const symbol = point ? contractSymbol(point, side) : null;
+                    const symbol = point ? optionIvSurfaceContractSymbol(point, side) : null;
                     return (
                       <td key={cell.targetMoneyness}>
                         {point && cell.value !== null ? (

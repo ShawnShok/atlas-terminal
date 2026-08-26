@@ -40,7 +40,7 @@ export function formatDateTime(value: string | null): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
     timeZone: "America/New_York",
     timeZoneName: "short",
   }).format(date);
@@ -52,7 +52,7 @@ export function formatTime(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
     timeZone: "America/New_York",
   }).format(date);
 }

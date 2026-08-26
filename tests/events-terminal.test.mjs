@@ -161,3 +161,10 @@ test("events UI is selected-watchlist based and exposes honest event fields plus
   }
   assert.match(terminalSource, /Earnings \(release or call\)/);
 });
+
+test("watchlist event selection preserves all-day events through their Eastern calendar date", async () => {
+  const routeSource = await readFile(new URL("../app/api/research/route.ts", import.meta.url), "utf8");
+  assert.match(routeSource, /const daysUntil = marketCalendarDaysUntil\(event\.startsAt, observedAt\)/);
+  assert.match(routeSource, /daysUntil === null \|\| daysUntil < 0/);
+  assert.doesNotMatch(routeSource, /Date\.parse\(event\.startsAt\) >= Date\.now\(\)/);
+});

@@ -450,7 +450,10 @@ export function Watchlist({
         </details>
         <StockStatusBadge status={status} />
       </header>
-      {!bundle || rows.length === 0 ? <StockEmptyState title="EMPTY WATCHLIST" detail={status.message ?? "Add securities to begin monitoring this list."} /> : (
+      {!bundle || rows.length === 0 ? <StockEmptyState
+        title={status.state === "loading" ? "LOADING WATCHLIST" : status.state === "error" ? "WATCHLIST UNAVAILABLE" : "EMPTY WATCHLIST"}
+        detail={status.message ?? "Add securities to begin monitoring this list."}
+      /> : (
         <div className="stock-table-wrap">
           <table className="stock-table stock-watchlist-table" style={tableStyle}>
             <caption className="stock-sr-only">Sortable, resizable, and reorderable {bundle.name} watchlist</caption>

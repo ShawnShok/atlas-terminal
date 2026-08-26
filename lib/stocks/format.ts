@@ -31,7 +31,7 @@ export function stockDateTime(value: string | null): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
     timeZone: "America/New_York",
     timeZoneName: "short",
   }).format(date);
@@ -41,4 +41,3 @@ export function stockTone(value: number | null): "positive" | "negative" | "neut
   if (value === null || value === 0) return "neutral";
   return value > 0 ? "positive" : "negative";
 }
-

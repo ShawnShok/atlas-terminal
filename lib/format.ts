@@ -31,7 +31,7 @@ export function formatCurrency(value: number | null | undefined): string {
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
-  const date = new Date(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
   if (Number.isNaN(date.valueOf())) return "—";
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -50,6 +50,6 @@ export function formatTime(value: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(date);
 }

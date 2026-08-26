@@ -56,6 +56,7 @@ test("IV surface aggregates calls and puts without inventing missing sides", () 
   const back = chain("2026-12-18", [
     contract("XYZ-C100-B", "call", "2026-12-18", 100, 0.34),
     contract("XYZ-P100-B", "put", "2026-12-18", 100, null),
+    contract("XYZ-P105-B", "put", "2026-12-18", 105, 0.41),
   ]);
   const result = surface.buildOptionIvSurface("xyz", ["2026-09-18", "2026-12-18"], [front, back]);
   assert.equal(result.underlyingSymbol, "XYZ");
@@ -72,6 +73,20 @@ test("IV surface aggregates calls and puts without inventing missing sides", () 
   assert.equal(callOnly.blendedImpliedVolatility, 0.34);
   assert.equal(surface.optionIvSurfaceValue(callOnly, "put"), null);
   assert.equal(surface.optionIvSurfaceValue(callOnly, "call"), 0.34);
+  const putOnly = result.points.find((point) => point.expirationDate === "2026-12-18" && point.strikePrice === 105);
+  assert.equal(surface.optionIvSurfaceContractSymbol(putOnly, "blended"), "XYZ-P105-B");
+  assert.equal(surface.optionIvSurfaceContractSymbol(putOnly, "call"), null);
+});
+
+test("IV surface quality is conservative across all loaded expirations", () => {
+  const live = chain("2026-09-18", [
+    contract("XYZ-C100", "call", "2026-09-18", 100, 0.3),
+  ], { quality: "live" });
+  const delayed = chain("2026-12-18", [
+    contract("XYZ-C100-B", "call", "2026-12-18", 100, 0.34),
+  ], { quality: "delayed" });
+  const result = surface.buildOptionIvSurface("XYZ", ["2026-09-18", "2026-12-18"], [live, delayed]);
+  assert.equal(result.quality, "delayed");
 });
 
 test("IV surface discloses partial expiration coverage", () => {

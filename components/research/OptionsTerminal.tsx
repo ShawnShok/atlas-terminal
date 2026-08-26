@@ -162,7 +162,7 @@ export function OptionsHeader({
       />
       <MetricCell
         label="QUOTE AVAILABILITY"
-        value={expirationDates.length === 0 ? "NO CHAIN" : quoteAvailability.toUpperCase()}
+        value={expirationDates.length === 0 ? "NO CHAIN" : quoteAvailability === "unavailable" ? "BID / ASK N/A" : quoteAvailability.toUpperCase()}
         tone={quoteAvailability === "available" ? "neutral" : "warning"}
         tooltip="Available means the returned contracts have valid two-sided bid/ask snapshots. It does not mean executable or real-time."
       />
@@ -193,7 +193,7 @@ export interface OptionsDataDisclosureProps {
 }
 
 export function OptionsDataDisclosure({ mode, hasContracts, quoteAvailability, quoteNote, asOf }: OptionsDataDisclosureProps) {
-  const unavailable = !hasContracts || quoteAvailability === "unavailable";
+  const unavailable = !hasContracts;
   return (
     <aside
       className={`research-options-disclosure is-${quoteAvailability}`}
@@ -202,7 +202,7 @@ export function OptionsDataDisclosure({ mode, hasContracts, quoteAvailability, q
       <div>
         <strong>OPTIONS DATA — {mode.toUpperCase()}</strong>
         {!hasContracts ? <b>NO LISTED OPTION CONTRACTS RETURNED</b> : null}
-        {hasContracts && quoteAvailability === "unavailable" ? <b>NO OPTION QUOTES AVAILABLE</b> : null}
+        {hasContracts && quoteAvailability === "unavailable" ? <b>BID / ASK QUOTES UNAVAILABLE — CHAIN DATA IS SHOWN</b> : null}
         {hasContracts && quoteAvailability === "partial" ? <b>OPTION QUOTES INCOMPLETE</b> : null}
       </div>
       <span>{hasContracts && quoteAvailability === "unavailable" ? "LIVE BID/ASK QUOTES NOT INCLUDED · " : ""}{quoteNote} · RESEARCH USE ONLY</span>

@@ -44,6 +44,12 @@ function periodLabel(period: NormalizedFinancialPeriod): string {
   return `Q${period.fiscalQuarter ?? "—"} ${period.fiscalYear ?? "—"}`;
 }
 
+function ratioValue(value: FinancialResearchBundle["ratios"][number]): string {
+  if (value.value === null || !Number.isFinite(value.value)) return "—";
+  if (value.format === "percent") return `${(value.value * 100).toFixed(2)}%`;
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value.value)}×`;
+}
+
 function FinancialTable({ periods }: { periods: readonly NormalizedFinancialPeriod[] }) {
   const metrics = [...new Map(periods.flatMap((period) => period.metrics).map((metric) => [metric.key, metric])).values()];
   if (!periods.length) return <div className="financial-empty"><strong>NO ENTITLED DATA</strong><span>The provider returned no periods for this statement and timeframe.</span></div>;
@@ -60,7 +66,7 @@ function FinancialTable({ periods }: { periods: readonly NormalizedFinancialPeri
 
 function GrowthTable({ periods }: { periods: readonly NormalizedFinancialPeriod[] }) {
   const revenuePeriods = periods
-    .map((period) => ({ period, metric: period.metrics.find((metric) => metric.key.toLowerCase().includes("revenue")) }))
+    .map((period) => ({ period, metric: period.metrics.find((metric) => metric.key.toLowerCase() === "revenue") }))
     .filter((item): item is { period: NormalizedFinancialPeriod; metric: FinancialLineItem & { value: number } } => typeof item.metric?.value === "number");
   if (revenuePeriods.length < 2) return <div className="financial-empty"><strong>INSUFFICIENT HISTORY</strong><span>At least two comparable revenue periods are required for growth calculations.</span></div>;
   return (
@@ -100,7 +106,7 @@ export function LiveFinancialsPanel({ ticker }: { ticker: string }) {
       {result.data.unavailableSections.length > 0 && <div className="financial-entitlement"><strong>SUBSCRIPTION LIMIT</strong><span>Unavailable: {result.data.unavailableSections.join(", ")}. ATLAS does not fabricate missing sections.</span></div>}
       <div className="financial-content">
         {view === "ratios" ? (
-          result.data.ratios.length ? <div className="ratio-grid">{result.data.ratios.map((ratio) => <div key={ratio.key}><span>{ratio.label}</span><strong>{ratio.value === null ? "—" : new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(ratio.value)}</strong></div>)}</div> : <div className="financial-empty"><strong>RATIOS UNAVAILABLE</strong><span>The current Massive entitlement returned no ratio data. Forward P/E requires a separate forward-estimates dataset.</span></div>
+          result.data.ratios.length ? <div className="ratio-grid">{result.data.ratios.map((ratio) => <div key={ratio.key}><span>{ratio.label}</span><strong>{ratioValue(ratio)}</strong></div>)}</div> : <div className="financial-empty"><strong>RATIOS UNAVAILABLE</strong><span>The current Massive entitlement returned no ratio data. Forward P/E requires a separate forward-estimates dataset.</span></div>
         ) : view === "growth" ? <GrowthTable periods={periods} /> : <FinancialTable periods={periods} />}
       </div>
       <footer className="financial-footer">AS OF {formatDate(result.data.asOf)} · HISTORICAL FILINGS · RESEARCH ONLY</footer>

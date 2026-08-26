@@ -242,11 +242,22 @@ test("option chain explicitly reports when no bid or ask entitlement data exists
   }] }, "NVDA", "2026-09-18");
 
   assert.equal(chain.quoteAvailability, "unavailable");
-  assert.match(chain.quoteNote, /NO OPTION QUOTES AVAILABLE/);
+  assert.match(chain.quoteNote, /NO BID \/ ASK OPTION QUOTES AVAILABLE/);
   assert.equal(chain.contracts[0].bidPrice, null);
   assert.equal(chain.contracts[0].askPrice, null);
   assert.equal(chain.contracts[0].sharesPerContract, 100);
   assert.equal(chain.contracts[0].sharesPerContractReported, false);
+});
+
+test("financial ratios distinguish percentage values from valuation multiples", () => {
+  const ratios = adapters.adaptFinancialRatios({ results: [{
+    dividend_yield: 0.0065,
+    gross_margin: 0.742,
+    price_to_earnings: 38.4,
+  }] });
+  assert.equal(ratios.find(({ key }) => key === "dividend_yield").format, "percent");
+  assert.equal(ratios.find(({ key }) => key === "gross_margin").format, "percent");
+  assert.equal(ratios.find(({ key }) => key === "price_to_earnings").format, "ratio");
 });
 
 test("option-chain normalization preserves provider pagination truncation", () => {

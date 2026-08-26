@@ -10,6 +10,7 @@ import {
   DEFAULT_WORKSPACES,
   getPanels,
   workspaceReducer,
+  type PanelResearchScope,
   type PanelView,
   type WorkspaceCommandTarget,
   type WorkspaceLayout,
@@ -31,7 +32,7 @@ function easternClock(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(date);
 }
 
@@ -97,6 +98,7 @@ export function TerminalShell() {
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
   const [comparisonSymbols, setComparisonSymbols] = useState<readonly string[]>([]);
   const [commandTarget, setCommandTarget] = useState<WorkspaceCommandTarget | null>(null);
+  const [panelResearchScopes, setPanelResearchScopes] = useState<Readonly<Record<string, PanelResearchScope>>>({});
   const [now, setNow] = useState<Date | null>(null);
 
   const panels = useMemo(() => getPanels(layout.root), [layout.root]);
@@ -137,14 +139,26 @@ export function TerminalShell() {
     return () => window.clearTimeout(timer);
   }, [activePanel]);
 
-  const setPanelView = useCallback((panelId: string, view: PanelView) => {
+  const setPanelView = useCallback((panelId: string, view: PanelView, scope: PanelResearchScope = "ticker") => {
     dispatch({ type: "set-view", panelId, view });
+    setPanelResearchScopes((current) => {
+      if (scope === "all") return { ...current, [panelId]: scope };
+      if (!(panelId in current)) return current;
+      const next = { ...current };
+      delete next[panelId];
+      return next;
+    });
   }, []);
 
   const setTickerForWorkspace = useCallback((ticker: string, targetPanelId = activePanelId) => {
     const normalized = ticker.trim().toUpperCase();
     if (!normalized) return;
     setActiveTicker(normalized);
+    setPanelResearchScopes((current) => {
+      const affected = new Set(syncTicker ? panels.map((panel) => panel.id) : [targetPanelId]);
+      if (![...affected].some((panelId) => panelId in current)) return current;
+      return Object.fromEntries(Object.entries(current).filter(([panelId]) => !affected.has(panelId)));
+    });
     if (syncTicker) {
       for (const panel of panels) dispatch({ type: "set-ticker", panelId: panel.id, ticker: normalized });
     } else {
@@ -160,6 +174,7 @@ export function TerminalShell() {
     setActivePanelId(first.id);
     setMaximizedPanelId(null);
     setActiveTicker(first.ticker);
+    setPanelResearchScopes({});
     setActivity((events) => [`Loaded ${next.name} workspace`, ...events].slice(0, 12));
   }, []);
 
@@ -201,7 +216,7 @@ export function TerminalShell() {
     if (intent.kind === "compare") {
       setComparisonSymbols(intent.tickers);
       setTickerForWorkspace(intent.tickers[0]);
-      setPanelView(activePanelId, "analytics");
+      setPanelView(activePanelId, "analytics", "ticker");
       notify("COMPARISON OPENED", `${intent.tickers.join(" · ")} normalized research is loading.`);
       return;
     }
@@ -222,12 +237,16 @@ export function TerminalShell() {
       earnings: "earnings",
     };
     const nextView = viewByIntent[intent.kind];
-    setPanelView(activePanelId, nextView);
+    const scope: PanelResearchScope = !("ticker" in intent)
+      && (intent.kind === "news" || intent.kind === "events" || intent.kind === "earnings")
+      ? "all"
+      : "ticker";
+    setPanelView(activePanelId, nextView, scope);
     notify(`${intent.kind.toUpperCase()} OPENED`, "Normalized research data is loading in the active panel.");
   }, [activePanelId, notify, selectWorkspace, setPanelView, setTickerForWorkspace]);
 
   const openShortcutView = useCallback((view: PanelView, message: string) => {
-    setPanelView(activePanelId, view);
+    setPanelView(activePanelId, view, view === "news" || view === "events" ? "all" : "ticker");
     notify("KEYBOARD COMMAND", message);
   }, [activePanelId, notify, setPanelView]);
 
@@ -256,6 +275,7 @@ export function TerminalShell() {
         setActivePanelId(first.id);
         setActiveTicker(first.ticker);
         setMaximizedPanelId(null);
+        setPanelResearchScopes({});
         notify("WORKSPACE RESTORED", `${saved.name} was loaded from PostgreSQL.`);
       })
       .catch((error: unknown) => notify("WORKSPACE NOT LOADED", error instanceof Error ? error.message : "PostgreSQL is unavailable."));
@@ -303,6 +323,12 @@ export function TerminalShell() {
       setActiveTicker(remaining[0].ticker);
     }
     if (maximizedPanelId === panelId) setMaximizedPanelId(null);
+    setPanelResearchScopes((current) => {
+      if (!(panelId in current)) return current;
+      const next = { ...current };
+      delete next[panelId];
+      return next;
+    });
   };
 
   const splitPanel = (panelId: string, direction: "horizontal" | "vertical") => {
@@ -357,7 +383,8 @@ export function TerminalShell() {
               settings: "settings",
             };
             setComparisonSymbols([]);
-            setPanelView(activePanelId, navigation[item.id] ?? "dashboard");
+            const nextView = navigation[item.id] ?? "dashboard";
+            setPanelView(activePanelId, nextView, item.id === "news" || item.id === "events" ? "all" : "ticker");
             notify(`${item.label.toUpperCase()} OPENED`, item.id === "portfolio" ? "No brokerage or holdings source is configured; capability status is shown instead." : "The module is active in the current panel.");
           }}
         />
@@ -399,6 +426,7 @@ export function TerminalShell() {
             recentTickers={recentTickers}
             comparisonSymbols={comparisonSymbols}
             commandTarget={commandTarget}
+            researchScopeByPanel={panelResearchScopes}
             onActivate={activatePanel}
             onClose={closePanel}
             onMaximize={setMaximizedPanelId}

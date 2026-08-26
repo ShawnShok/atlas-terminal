@@ -29,7 +29,11 @@ function price(value: number | null | undefined): string {
 }
 
 export function TopBar({ activeTicker, easternTime, marketStatus, onOpenCommand }: TopBarProps) {
-  const dashboard = useResearchData<TopBarDashboard>("dashboard", {}, { refreshMs: 30_000 });
+  // The top strip needs quotes only. Avoid refreshing the much heavier dashboard
+  // bundle (news, movers, and events) merely to paint four ETF proxies.
+  const dashboard = useResearchData<TopBarDashboard>("market", {
+    symbols: PROXIES.map(({ symbol }) => symbol).join(","),
+  }, { refreshMs: 30_000, retainMs: 20_000 });
   const connection = dashboard.error ? "OFFLINE" : dashboard.meta?.mode === "mock" ? "MOCK" : dashboard.meta ? "CONNECTED" : "CONNECTING";
 
   return (

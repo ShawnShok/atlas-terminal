@@ -34,6 +34,7 @@ interface LiveNewsBundle extends NewsResearchBundle {
 }
 
 const EMPTY_NEWS_ARTICLES: readonly NewsArticle[] = [];
+const MAX_TARGETED_NEWS_SYMBOLS = 12;
 
 interface PersonalPayload<T> {
   readonly ok: boolean;
@@ -85,17 +86,19 @@ type ReadTrackingMode = "checking" | "durable" | "session" | "unavailable";
 
 function LiveNewsPanelInner({
   ticker,
+  allSymbols = false,
   initialArticleId = null,
   onTickerSelect,
 }: {
   ticker: string;
+  allSymbols?: boolean;
   initialArticleId?: string | null;
   onTickerSelect: (ticker: string) => void;
 }) {
   const watchlists = useWatchlists();
   const [filters, setFilters] = useState<NewsFiltersValue>({
-    scope: "ticker",
-    tickers: ticker,
+    scope: allSymbols ? "all" : "ticker",
+    tickers: allSymbols ? "" : ticker,
     sector: "",
     category: "all",
     dateFrom: "",
@@ -202,21 +205,32 @@ function LiveNewsPanelInner({
     });
   }, [persistReadArticle, readMode]);
 
+  const selectedWatchlistTickers = useMemo(() => (watchlists.selected?.tickers ?? [])
+    .map((item) => item.symbol.trim().toUpperCase())
+    .filter(Boolean), [watchlists.selected]);
   const requestedTickers = useMemo(() => {
     const parsed = parseNewsTickers(filters.tickers);
     return filters.scope === "ticker" && parsed.length === 0 ? [ticker] : parsed;
   }, [filters.scope, filters.tickers, ticker]);
-  const directTicker = filters.scope === "ticker" && requestedTickers.length === 1
-    ? requestedTickers[0]
+  const unboundedScopeTickers = filters.scope === "watchlist" ? selectedWatchlistTickers : requestedTickers;
+  const scopeTickers = useMemo(
+    () => unboundedScopeTickers.slice(0, MAX_TARGETED_NEWS_SYMBOLS),
+    [unboundedScopeTickers],
+  );
+  const directTicker = filters.scope === "ticker" && scopeTickers.length === 1
+    ? scopeTickers[0]
     : null;
   const params = useMemo(() => ({
-    ticker: directTicker ?? ticker,
-    all: !directTicker,
+    ticker: directTicker ?? undefined,
+    symbols: !directTicker && filters.scope !== "all" && scopeTickers.length > 0
+      ? scopeTickers.join(",")
+      : undefined,
+    all: filters.scope === "all" ? true : undefined,
     // Sending an earlier UTC boundary can fetch a few extra records around DST,
     // while the exact Eastern date range is enforced locally below.
     after: filters.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : undefined,
     before: filters.dateTo ? easternInclusiveDateUpperBound(filters.dateTo) ?? undefined : undefined,
-  }), [directTicker, filters.dateFrom, filters.dateTo, ticker]);
+  }), [directTicker, filters.dateFrom, filters.dateTo, filters.scope, scopeTickers]);
   const result = useResearchData<LiveNewsBundle>("news", params, { refreshMs: 30_000, retainMs: 20_000 });
   const returnedArticles = result.data?.articles ?? EMPTY_NEWS_ARTICLES;
   const availableCategories = useMemo(() => [...new Set(returnedArticles.flatMap((article) => article.categories))]
@@ -246,10 +260,8 @@ function LiveNewsPanelInner({
     .map((classification) => classification.sector?.trim())
     .filter((sector): sector is string => Boolean(sector)))]
     .sort((left, right) => left.localeCompare(right)), [classifications.data]);
-  const selectedWatchlistSymbols = useMemo(() => new Set(
-    (watchlists.selected?.tickers ?? []).map((item) => item.symbol.trim().toUpperCase()),
-  ), [watchlists.selected]);
-  const requestedTickerSet = useMemo(() => new Set(requestedTickers), [requestedTickers]);
+  const selectedWatchlistSymbols = useMemo(() => new Set(selectedWatchlistTickers), [selectedWatchlistTickers]);
+  const requestedTickerSet = useMemo(() => new Set(scopeTickers), [scopeTickers]);
 
   const filteredArticles = useMemo(() => returnedArticles.filter((article) => {
     const articleSymbols = article.tickers.map((symbol) => symbol.trim().toUpperCase());
@@ -395,8 +407,11 @@ function LiveNewsPanelInner({
   if (!result.data) return <DataState loading={result.loading} error={result.error} onRetry={result.reload} />;
   const baseStatus = researchStatus(result.meta, result.error);
   const enrichmentMessages: string[] = result.data.providerNote ? [result.data.providerNote] : [];
-  if (requestedTickers.length > 1) {
-    enrichmentMessages.push(`Multi-ticker filtering is applied to the centrally refreshed ${returnedArticles.length}-article feed window.`);
+  if (scopeTickers.length > 1) {
+    enrichmentMessages.push(`Multi-ticker results combine targeted feeds for ${scopeTickers.length} symbols (${returnedArticles.length} deduplicated articles).`);
+  }
+  if (unboundedScopeTickers.length > scopeTickers.length) {
+    enrichmentMessages.push(`Targeted news retrieval is limited to the first ${scopeTickers.length} symbols in this view.`);
   }
   if (filters.scope === "watchlist") {
     enrichmentMessages.push(watchlists.selected
@@ -482,6 +497,6 @@ function LiveNewsPanelInner({
   );
 }
 
-export function LiveNewsPanel(props: { ticker: string; initialArticleId?: string | null; onTickerSelect: (ticker: string) => void }) {
-  return <LiveNewsPanelInner key={`${props.ticker}:${props.initialArticleId ?? "latest"}`} {...props} />;
+export function LiveNewsPanel(props: { ticker: string; allSymbols?: boolean; initialArticleId?: string | null; onTickerSelect: (ticker: string) => void }) {
+  return <LiveNewsPanelInner key={`${props.ticker}:${props.allSymbols ? "all" : "ticker"}:${props.initialArticleId ?? "latest"}`} {...props} />;
 }

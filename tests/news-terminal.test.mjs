@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
-const [modelSource, liveNewsSource, terminalSource, personalRouteSource] = await Promise.all([
+const [modelSource, liveNewsSource, terminalSource, personalRouteSource, researchRouteSource] = await Promise.all([
   readFile(new URL("../lib/research/model.ts", import.meta.url), "utf8"),
   readFile(new URL("../components/terminal/LiveNewsPanel.tsx", import.meta.url), "utf8"),
   readFile(new URL("../components/research/NewsTerminal.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/api/personal/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/research/route.ts", import.meta.url), "utf8"),
 ]);
 
 const transpiled = ts.transpileModule(modelSource, {
@@ -110,6 +111,15 @@ test("news UI derives scopes from returned data and uses selected durable watchl
   assert.match(terminalSource, /categories\.map\(\(category\)/);
   assert.match(terminalSource, /TIME[\s\S]*TICKER[\s\S]*HEADLINE[\s\S]*CATEGORY[\s\S]*SOURCE[\s\S]*AGE/);
   assert.match(terminalSource, /ONLY UNREAD/);
+});
+
+test("multi-ticker and watchlist news use targeted provider requests", () => {
+  assert.match(liveNewsSource, /symbols: !directTicker && filters\.scope !== "all"/);
+  assert.match(liveNewsSource, /selectedWatchlistTickers/);
+  assert.doesNotMatch(liveNewsSource, /all: !directTicker/);
+  assert.match(researchRouteSource, /const requestedNewsSymbols/);
+  assert.match(researchRouteSource, /mapWithConcurrency\(requestedNewsSymbols/);
+  assert.match(researchRouteSource, /dedupeNewsArticles\(successful\.flatMap/);
 });
 
 test("read markers and structured news alerts stay owner-scoped at the personal API", () => {

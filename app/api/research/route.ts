@@ -12,6 +12,7 @@ import { getMockResearchService } from "@/lib/mock";
 import {
   dedupeCorporateEvents,
   dedupeNewsArticles,
+  marketCalendarDaysUntil,
   optionsActivityTimelineEntries,
   researchSectorFromSic,
   volumeSpikeTimelineEntries,
@@ -236,7 +237,7 @@ function eventTypeFilter(
 function mergeEventBundles(bundles: readonly EventsResearchBundle[]): EventsResearchBundle {
   const first = bundles[0];
   if (!first) {
-    throw new Error("Event response is invalid.");
+    throw new AppError("UPSTREAM_RESPONSE_INVALID", "The event provider returned an invalid response.");
   }
   return {
     ...first,
@@ -286,9 +287,14 @@ function watchlistQuote(
     ? relativeVolume(quote.volume, averageVolume)
     : null;
   const matchingNews = articles.find((article) => article.tickers.includes(snapshot.symbol)) ?? null;
+  const observedAt = new Date().toISOString();
   const matchingEvent = events
-    .filter((event) => event.symbol === snapshot.symbol && Date.parse(event.startsAt) >= Date.now())
-    .sort((left, right) => left.startsAt.localeCompare(right.startsAt))[0] ?? null;
+    .flatMap((event) => {
+      if (event.symbol !== snapshot.symbol || event.status === "canceled" || event.status === "completed") return [];
+      const daysUntil = marketCalendarDaysUntil(event.startsAt, observedAt);
+      return daysUntil === null || daysUntil < 0 ? [] : [{ event, daysUntil }];
+    })
+    .sort((left, right) => left.daysUntil - right.daysUntil || left.event.startsAt.localeCompare(right.event.startsAt))[0] ?? null;
   const optionObservations = options
     ? findUnusualOptionActivity(options.contracts, { minimumVolume: 100, minimumVolumeToOpenInterest: 1.5 })
     : [];
@@ -323,12 +329,12 @@ function watchlistQuote(
       publisher: matchingNews.publisher.name,
     } : null,
     nextEvent: matchingEvent ? {
-      id: matchingEvent.id,
-      type: matchingEvent.type,
-      status: matchingEvent.status,
-      title: matchingEvent.title,
-      startsAt: matchingEvent.startsAt,
-      daysUntil: Math.max(0, Math.ceil((Date.parse(matchingEvent.startsAt) - Date.now()) / 86_400_000)),
+      id: matchingEvent.event.id,
+      type: matchingEvent.event.type,
+      status: matchingEvent.event.status,
+      title: matchingEvent.event.title,
+      startsAt: matchingEvent.event.startsAt,
+      daysUntil: matchingEvent.daysUntil,
     } : null,
     optionsActivity: options && options.contracts.length > 0 ? {
       observed: Boolean(topOption),
@@ -490,7 +496,7 @@ function chartRange(rangeInput: string | null, intervalInput: string | null): {
     MAX: { days: 7_305, defaultInterval: "1W", allowedIntervals: ["1W"] },
   } as const;
   if (!hasOwnKey(settings, range)) {
-    throw new Error("Chart range is invalid.");
+    throw new AppError("VALIDATION_ERROR", "Chart range is invalid.");
   }
   const selected = settings[range];
   const intervalName = (intervalInput ?? selected.defaultInterval).trim().toUpperCase();
@@ -498,7 +504,7 @@ function chartRange(rangeInput: string | null, intervalInput: string | null): {
     !hasOwnKey(CHART_INTERVALS, intervalName)
     || !selected.allowedIntervals.some((candidate) => candidate === intervalName)
   ) {
-    throw new Error("Chart range and interval combination is invalid.");
+    throw new AppError("VALIDATION_ERROR", "Chart range and interval combination is invalid.");
   }
   const interval = CHART_INTERVALS[intervalName];
   return {
@@ -600,8 +606,9 @@ export async function GET(request: NextRequest) {
     const kind = request.nextUrl.searchParams.get("kind")?.toLowerCase() ?? "dashboard";
     const tickerParameter = request.nextUrl.searchParams.get("ticker");
     const allSymbolsRequested = request.nextUrl.searchParams.get("all") === "true";
+    const multiTickerNewsRequested = kind === "news" && Boolean(request.nextUrl.searchParams.get("symbols")?.trim());
     const tickerRequired = ["security", "chart", "options", "options-surface", "financials", "timeline"].includes(kind)
-      || (["news", "events", "earnings"].includes(kind) && !allSymbolsRequested);
+      || (["news", "events", "earnings"].includes(kind) && !allSymbolsRequested && !multiTickerNewsRequested);
     // Symbol-specific endpoints fail closed when `ticker` is absent. This avoids
     // a stale caller accidentally receiving NVDA data for another requested name.
     const symbol = ticker(tickerParameter, tickerRequired ? undefined : "NVDA");
@@ -911,25 +918,62 @@ export async function GET(request: NextRequest) {
         });
       }
       case "news": {
+        const requestedNewsSymbols = request.nextUrl.searchParams.get("symbols")
+          ? symbols(request.nextUrl.searchParams.get("symbols"), [], 12)
+          : [];
         const tickerFilter = request.nextUrl.searchParams.get("all") === "true" ? undefined : symbol;
         const query = {
-          ticker: tickerFilter,
+          ticker: requestedNewsSymbols.length > 0 ? undefined : tickerFilter,
           publishedAfter: isoTimestamp(request.nextUrl.searchParams.get("after")),
           publishedBefore: isoTimestamp(request.nextUrl.searchParams.get("before")),
           category: newsCategory(request.nextUrl.searchParams.get("category")),
           keyword: request.nextUrl.searchParams.get("q") ?? undefined,
         };
+        if (requestedNewsSymbols.length > 0) {
+          const perTickerLimit = Math.max(20, Math.floor(240 / requestedNewsSymbols.length));
+          const results = await mapWithConcurrency(requestedNewsSymbols, SCANNER_CONTEXT_CONCURRENCY, async (item) => {
+            try {
+              const value = mode === "mock"
+                ? await mock.getBenzingaNews({ ...query, ticker: item, limit: perTickerLimit }).then((bundle) => ({ bundle, source: "mock" as const, note: null }))
+                : await getLiveNewsWithFallback(live!, market!, { ...query, ticker: item, limit: perTickerLimit });
+              return { symbol: item, value, error: null };
+            } catch (error) {
+              return { symbol: item, value: null, error };
+            }
+          });
+          const successful = results.flatMap((result) => result.value ? [result.value] : []);
+          if (successful.length === 0) {
+            throw new AppError("UPSTREAM_UNAVAILABLE", "News is temporarily unavailable for the requested symbols.", { retryable: true });
+          }
+          const failedSymbols = results.filter((result) => result.error !== null).map((result) => result.symbol);
+          const notes = [
+            ...successful.flatMap((result) => result.note ? [result.note] : []),
+            failedSymbols.length > 0 ? `${failedSymbols.length}/${requestedNewsSymbols.length} ticker feeds were unavailable.` : null,
+          ].filter((value): value is string => value !== null);
+          const sources = [...new Set(successful.map((result) => result.source))];
+          const articles = dedupeNewsArticles(successful.flatMap((result) => result.bundle.articles));
+          const retrievedAt = new Date().toISOString();
+          return response({ articles, filterTicker: null, providerNote: notes.join(" ") || null }, {
+            mode,
+            source: sources.join(" + "),
+            quality: mode === "mock" ? "indicative" : sources.every((source) => source === "benzinga") ? "live" : "unknown",
+            asOf: retrievedAt,
+            staleAfterMs: mode === "live" ? environment.CACHE_TTL_NEWS_MS * 3 : null,
+          });
+        }
         if (mode === "mock") {
           const bundle = await mock.getBenzingaNews(query);
           const data = { ...bundle, articles: dedupeNewsArticles(bundle.articles) };
           return response(data, { mode, source: "mock", quality: "indicative", asOf: data.articles[0]?.asOf });
         }
         const news = await getLiveNewsWithFallback(live!, market!, query);
+        const retrievedAt = new Date().toISOString();
         return response({ ...news.bundle, providerNote: news.note }, {
           mode,
           source: news.source,
           quality: news.source === "benzinga" ? "live" : "unknown",
-          asOf: news.bundle.articles[0]?.asOf,
+          asOf: retrievedAt,
+          staleAfterMs: environment.CACHE_TTL_NEWS_MS * 3,
         });
       }
       case "events":
@@ -1167,14 +1211,12 @@ export async function GET(request: NextRequest) {
       ok: false,
       error: {
         code: normalized.code,
-        message: normalized.code === "UNKNOWN_ERROR" && error instanceof Error && error.message.includes("invalid")
-          ? "The request parameters are invalid."
-          : normalized.message,
+        message: normalized.message,
         retryable: normalized.retryable,
         requestId,
       },
     }, {
-      status: normalized.code === "UNKNOWN_ERROR" ? 400 : normalized.statusCode,
+      status: normalized.statusCode,
       headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" },
     });
   }

@@ -8,7 +8,7 @@ import {
   Rows2,
   X,
 } from "lucide-react";
-import type { PanelView, WorkspaceCommandTarget, WorkspacePanel as PanelModel } from "@/lib/workspace/model";
+import type { PanelResearchScope, PanelView, WorkspaceCommandTarget, WorkspacePanel as PanelModel } from "@/lib/workspace/model";
 import { PanelContent } from "./PanelContent";
 
 interface WorkspacePanelProps {
@@ -21,6 +21,7 @@ interface WorkspacePanelProps {
   recentTickers: readonly string[];
   comparisonSymbols?: readonly string[];
   commandTarget?: WorkspaceCommandTarget | null;
+  researchScope: PanelResearchScope;
   onActivate: () => void;
   onClose: () => void;
   onMaximize: () => void;
@@ -62,6 +63,7 @@ export function WorkspacePanel({
   recentTickers,
   comparisonSymbols,
   commandTarget,
+  researchScope,
   onActivate,
   onClose,
   onMaximize,
@@ -126,6 +128,7 @@ export function WorkspacePanel({
           recentTickers={recentTickers}
           comparisonSymbols={comparisonSymbols}
           commandTarget={commandTarget}
+          researchScope={researchScope}
           onTickerChange={onTickerChange}
           onViewChange={onViewChange}
         />

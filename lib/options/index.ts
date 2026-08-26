@@ -18,6 +18,7 @@ export {
 } from "./chain-analytics";
 export {
   buildOptionIvSurface,
+  optionIvSurfaceContractSymbol,
   optionIvSurfaceValue,
   selectIvSurfaceExpirations,
 } from "./iv-surface";

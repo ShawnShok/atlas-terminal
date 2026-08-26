@@ -46,12 +46,14 @@ async function saveEventAlert(draft: EventAlertDraft): Promise<void> {
 
 function LiveEventsPanelInner({
   ticker,
+  allSymbols = false,
   earningsOnly = false,
   initialEventId = null,
   initialEventStartsAt = null,
   onTickerSelect,
 }: {
   ticker: string;
+  allSymbols?: boolean;
   earningsOnly?: boolean;
   initialEventId?: string | null;
   initialEventStartsAt?: string | null;
@@ -62,7 +64,7 @@ function LiveEventsPanelInner({
   const [filters, setFilters] = useState<EventFiltersValue>({
     horizon: initialEventDate ? "custom" : earningsOnly ? "this-week" : "this-month",
     watchlistOnly: false,
-    ticker,
+    ticker: allSymbols ? "" : ticker,
     type: earningsOnly ? "earnings-release" : "all",
     status: "all",
     confirmedOnly: false,
@@ -92,7 +94,7 @@ function LiveEventsPanelInner({
   const researchKind = earningsOnly || filters.earningsOnly ? "earnings" : "events";
   const params = useMemo(() => ({
     ticker: queryAllSymbols ? undefined : requestedTicker,
-    all: queryAllSymbols,
+    all: queryAllSymbols ? true : undefined,
     from,
     to,
     type: filters.type === "all" ? undefined : filters.type,
@@ -283,6 +285,6 @@ function LiveEventsPanelInner({
   );
 }
 
-export function LiveEventsPanel(props: { ticker: string; earningsOnly?: boolean; initialEventId?: string | null; initialEventStartsAt?: string | null; onTickerSelect: (ticker: string) => void }) {
-  return <LiveEventsPanelInner key={`${props.ticker}:${props.earningsOnly ? "earnings" : "events"}:${props.initialEventId ?? "next"}`} {...props} />;
+export function LiveEventsPanel(props: { ticker: string; allSymbols?: boolean; earningsOnly?: boolean; initialEventId?: string | null; initialEventStartsAt?: string | null; onTickerSelect: (ticker: string) => void }) {
+  return <LiveEventsPanelInner key={`${props.ticker}:${props.allSymbols ? "all" : "ticker"}:${props.earningsOnly ? "earnings" : "events"}:${props.initialEventId ?? "next"}`} {...props} />;
 }

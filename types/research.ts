@@ -215,6 +215,7 @@ export interface FinancialRatioPoint {
   readonly key: string;
   readonly label: string;
   readonly value: number | null;
+  readonly format: "ratio" | "percent";
 }
 
 export interface FinancialResearchBundle {

@@ -86,4 +86,7 @@ test("chart UI wires logarithmic mode and explicit extended-hours availability",
   assert.match(priceChart, /PriceScaleMode\.Logarithmic/);
   assert.match(priceChart, /PriceScaleMode\.Normal/);
   assert.match(priceChart, /selectChartBars/);
+  assert.match(priceChart, /const separatePanes = new Map/);
+  assert.match(priceChart, /separatePanes\.set\(series\.indicator, nextPane\)/);
+  assert.match(priceChart, /separatePanes\.get\(series\.indicator\)/);
 });
