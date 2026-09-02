@@ -351,6 +351,7 @@ function patternCandidates(
     id: ticker + "-" + detection.pattern + "-" + detection.detectedAt,
     symbol: ticker,
     pattern: detection.pattern,
+    phase: detection.phase,
     confidence: detection.confidence,
     detectedAt: detection.detectedAt,
     priceLevels: Object.entries(detection.relevantPriceLevels).map(([label, price]) => ({ label, price })),
@@ -493,7 +494,7 @@ export function LiveAnalyticsPanel({
     loading = chart.loading;
     missingData = !chart.data;
     reload = chart.reload;
-    statusMessage = "Experimental pattern observations include heuristic confidence and are not forecasts or recommendations.";
+    statusMessage = "Experimental pattern observations include heuristic confidence and are not forecasts or recommendations. Developing setups are separated from fresh patterns confirmed by a closing neckline break.";
   } else {
     activeMeta = timeline.meta ?? chart.meta;
     activeError = timeline.error ?? chart.error;

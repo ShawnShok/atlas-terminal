@@ -47,6 +47,11 @@ test("news-price timeline supports pointer, keyboard, marker, and table interact
   assert.match(researchCssSource, /\.research-news-markers tbody tr\.is-selected/);
 });
 
+test("pattern cards disclose developing versus confirmed phase", () => {
+  assert.match(analyticsTerminalSource, /phase-\$\{candidate\.phase\}/);
+  assert.match(liveAnalyticsSource, /Developing setups are separated from fresh patterns confirmed by a closing neckline break/);
+});
+
 test("market breadth reports directional counts, SMA coverage, and yearly extremes", () => {
   const result = breadth.calculateMarketBreadth([
     {
@@ -111,10 +116,48 @@ test("experimental pattern detection returns confidence, levels, reasoning, and 
   const detections = patterns.detectResearchPatterns(bars);
   const doubleBottom = detections.find(({ pattern }) => pattern === "double-bottom");
   assert.ok(doubleBottom);
+  assert.equal(doubleBottom.phase, "developing");
   assert.ok(doubleBottom.confidence > 0 && doubleBottom.confidence < 1);
   assert.equal(typeof doubleBottom.relevantPriceLevels.support, "number");
   assert.match(doubleBottom.reasoning, /two separated lows/i);
   assert.match(doubleBottom.disclaimer, /not an investment recommendation/i);
+});
+
+test("pattern detection retires a stale double top and identifies a developing edge double bottom", () => {
+  const lows = [66, 63, 58, 60, 65, 72, 78, 82, 80, 76, 79, 83, 81, 76, 72, 69, 66, 64, 63, 62, 61.5, 61];
+  const bars = lows.map((low, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+    open: low + 1.5,
+    high: low + 4,
+    low,
+    close: low + 2,
+    volume: 1_000,
+  }));
+  const detections = patterns.detectResearchPatterns(bars);
+  assert.equal(detections.some(({ pattern }) => pattern === "double-top"), false);
+  const doubleBottom = detections.find(({ pattern }) => pattern === "double-bottom");
+  assert.ok(doubleBottom);
+  assert.equal(doubleBottom.phase, "developing");
+  assert.equal(doubleBottom.detectedAt, bars.at(-1).timestamp);
+  assert.match(doubleBottom.reasoning, /active trough is still forming/i);
+  assert.match(doubleBottom.reasoning, /confirmation is pending/i);
+});
+
+test("fresh double tops require a closing neckline break and keep the confirmation timestamp", () => {
+  const highs = [10, 11, 15, 12, 10, 11, 14.9, 13, 11, 9, 8, 7];
+  const bars = highs.map((high, index) => ({
+    timestamp: new Date(Date.UTC(2026, 1, index + 1)).toISOString(),
+    open: high - 1.2,
+    high,
+    low: high - 2,
+    close: high - 1,
+    volume: 1_000,
+  }));
+  const doubleTop = patterns.detectResearchPatterns(bars).find(({ pattern }) => pattern === "double-top");
+  assert.ok(doubleTop);
+  assert.equal(doubleTop.phase, "confirmed");
+  assert.equal(doubleTop.detectedAt, bars[10].timestamp);
+  assert.match(doubleTop.reasoning, /neckline was broken on a closing basis/i);
 });
 
 function article() {

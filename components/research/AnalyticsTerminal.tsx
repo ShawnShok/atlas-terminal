@@ -316,7 +316,10 @@ export function PatternResearch({ candidates, onTickerSelect }: PatternResearchP
         <article key={candidate.id}>
           <header>
             <button type="button" className="research-symbol-button" onClick={() => onTickerSelect?.(candidate.symbol)}>{candidate.symbol}</button>
-            <span className={`research-volume-status status-${candidate.volumeConfirmation}`}>{candidate.volumeConfirmation.replaceAll("-", " ")}</span>
+            <div className="research-pattern-statuses">
+              <span className={`research-pattern-phase phase-${candidate.phase}`}>{candidate.phase}</span>
+              <span className={`research-volume-status status-${candidate.volumeConfirmation}`}>volume {candidate.volumeConfirmation.replaceAll("-", " ")}</span>
+            </div>
           </header>
           <h3>{candidate.pattern.replaceAll("-", " ")}</h3>
           <div className="research-confidence"><span>MODEL CONFIDENCE</span><strong>{formatPercent(candidate.confidence * 100, 0)}</strong><i><b style={{ width: `${Math.max(0, Math.min(100, candidate.confidence * 100))}%` }} /></i></div>

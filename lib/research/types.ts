@@ -436,6 +436,7 @@ export interface PatternCandidate {
   readonly id: string;
   readonly symbol: string;
   readonly pattern: PatternName;
+  readonly phase: "developing" | "confirmed";
   readonly confidence: number;
   readonly detectedAt: string;
   readonly priceLevels: readonly PatternPriceLevel[];

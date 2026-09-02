@@ -666,6 +666,9 @@
 .research-pattern-grid { display: grid; grid-template-columns: repeat(3, minmax(230px, 1fr)); gap: 6px; }
 .research-pattern-grid > article { padding: 12px; border: 1px solid var(--line); background: #0a0f15; }
 .research-pattern-grid > article > header { display: flex; align-items: center; justify-content: space-between; }
+.research-pattern-statuses { display: flex; align-items: center; gap: 4px; }
+.research-pattern-phase { padding: 3px 5px; border: 1px solid #34516e; color: var(--blue); font-size: 6px; text-transform: uppercase; }
+.research-pattern-phase.phase-confirmed { border-color: #2d5a46; color: var(--green); }
 .research-volume-status { padding: 3px 5px; border: 1px solid var(--line-strong); color: #758495; font-size: 6px; text-transform: uppercase; }
 .research-volume-status.status-confirmed { border-color: #24533f; color: var(--green); }
 .research-volume-status.status-not-confirmed { border-color: #5d2631; color: var(--red); }
