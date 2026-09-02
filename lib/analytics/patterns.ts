@@ -26,6 +26,7 @@ export interface PatternDetection {
   readonly confidence: number;
   readonly relevantPriceLevels: Readonly<Record<string, number>>;
   readonly volumeConfirmation: boolean;
+  readonly analysis: string;
   readonly reasoning: string;
   readonly detectedAt: string;
   readonly disclaimer: string;
@@ -52,6 +53,10 @@ function clamp(value: number): number {
 
 function average(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function formatAnalysisPrice(value: number): string {
+  return "$" + value.toFixed(2);
 }
 
 function slope(values: readonly number[]): number {
@@ -168,6 +173,19 @@ function doublePattern(
       : edgeReversal === null
         ? "The neckline has not yet been broken on a closing basis."
         : "The active " + (isTop ? "peak" : "trough") + " is still forming, so neckline confirmation is pending.";
+    const neckline = formatAnalysisPrice(geometry.pivot);
+    const extreme = formatAnalysisPrice(geometry.midpoint);
+    const analysis = phase === "confirmed"
+      ? isTop
+        ? "Price has closed below the " + neckline + " neckline after testing the " + extreme
+          + " resistance zone twice. Staying below the neckline supports the breakdown reading; a close back above the resistance zone would weaken it."
+        : "Price has closed above the " + neckline + " neckline after testing the " + extreme
+          + " support zone twice. Staying above the neckline supports the reversal reading; a close back below the support zone would weaken it."
+      : isTop
+        ? "Price is retesting a prior peak near " + extreme + ". A close below the " + neckline
+          + " neckline would confirm the structure; a decisive close above the peak zone would weaken it."
+        : "Price is retesting a prior trough near " + extreme + ". A close above the " + neckline
+          + " neckline would confirm the structure; a decisive close below the trough zone would weaken it.";
     return {
       pattern: setup,
       phase,
@@ -176,6 +194,7 @@ function doublePattern(
         ? { resistance: geometry.midpoint, interveningSupport: geometry.pivot, observedPeak: right.value }
         : { support: geometry.midpoint, interveningResistance: geometry.pivot, observedTrough: right.value },
       volumeConfirmation,
+      analysis,
       reasoning: (phase === "confirmed" ? "Confirmed " : "Developing ") + setup
         + ": two separated " + (isTop ? "highs" : "lows")
         + " were within " + (geometry.similarity * 100).toFixed(2)
@@ -267,15 +286,29 @@ function trianglePattern(
   if (!pattern) return null;
 
   const convergence = initialRange === 0 ? 0 : 1 - finalRange / initialRange;
+  const upperBoundary = highs[highs.length - 1];
+  const lowerBoundary = lows[lows.length - 1];
+  const analysis = pattern === "ascending-triangle"
+    ? "Higher lows are pressing toward the " + formatAnalysisPrice(upperBoundary)
+      + " upper boundary. A close above it would confirm an upside break; a close below "
+      + formatAnalysisPrice(lowerBoundary) + " would weaken the setup."
+    : pattern === "descending-triangle"
+      ? "Lower highs are pressing toward the " + formatAnalysisPrice(lowerBoundary)
+        + " lower boundary. A close below it would confirm a downside break; a close above "
+        + formatAnalysisPrice(upperBoundary) + " would weaken the setup."
+      : "Price is compressing between " + formatAnalysisPrice(lowerBoundary) + " and "
+        + formatAnalysisPrice(upperBoundary)
+        + ". Direction remains unresolved until a close outside that range; renewed range expansion inside it would weaken the setup.";
   return {
     pattern,
     phase: "developing",
     confidence: clamp(0.5 + Math.min(Math.max(convergence, 0), 0.3) + (volumeConfirmation ? 0.05 : 0)),
     relevantPriceLevels: {
-      upperBoundary: highs[highs.length - 1],
-      lowerBoundary: lows[lows.length - 1],
+      upperBoundary,
+      lowerBoundary,
     },
     volumeConfirmation,
+    analysis,
     reasoning: "Recent high and low regressions converged; normalized slopes were "
       + highSlope.toFixed(4) + " and " + lowSlope.toFixed(4) + " per bar.",
     detectedAt: bars[bars.length - 1].timestamp,
@@ -299,12 +332,16 @@ function breakoutPattern(
   const distance = latest.close > resistance
     ? (latest.close - resistance) / resistance
     : (support - latest.close) / support;
+  const brokeHigher = latest.close > resistance;
   return {
     pattern: "consolidation-breakout",
     phase: "confirmed",
     confidence: clamp(0.5 + Math.min(distance * 4, 0.25) + (volumeConfirmation ? 0.1 : 0)),
     relevantPriceLevels: { resistance, support, observedClose: latest.close },
     volumeConfirmation,
+    analysis: "The latest close at " + formatAnalysisPrice(latest.close) + " moved "
+      + (brokeHigher ? "above " + formatAnalysisPrice(resistance) + " resistance" : "below " + formatAnalysisPrice(support) + " support")
+      + ". Holding outside the former range supports the breakout reading; a close back inside the range would weaken it.",
     reasoning: "The prior 10-bar range was " + (rangePercent * 100).toFixed(2)
       + "% wide and the latest close moved " + direction + ".",
     detectedAt: latest.timestamp,
@@ -333,6 +370,11 @@ function levelTestPattern(
     confidence: clamp(0.45 + (1 - nearest / tolerance) * 0.25 + (volumeConfirmation ? 0.05 : 0)),
     relevantPriceLevels: { support, resistance, observedClose: latest.close },
     volumeConfirmation,
+    analysis: tested === "support"
+      ? "Price is testing support near " + formatAnalysisPrice(support)
+        + ". A hold or rejection keeps the level relevant; a decisive close below it would weaken that interpretation."
+      : "Price is testing resistance near " + formatAnalysisPrice(resistance)
+        + ". A rejection keeps the level relevant; a decisive close above it would weaken that interpretation.",
     reasoning: "The latest close was within " + (nearest * 100).toFixed(2)
       + "% of the recent " + tested + " level.",
     detectedAt: latest.timestamp,
@@ -384,6 +426,15 @@ export function detectResearchPatterns(
           ...triangle,
           pattern: move > 0 ? "bullish-pennant" : "bearish-pennant",
           confidence: clamp(triangle.confidence - 0.05 + Math.min(Math.abs(move), 0.2)),
+          analysis: move > 0
+            ? "An upward lead-in is consolidating between "
+              + formatAnalysisPrice(triangle.relevantPriceLevels.lowerBoundary) + " and "
+              + formatAnalysisPrice(triangle.relevantPriceLevels.upperBoundary)
+              + ". A close above the upper boundary would confirm continuation; a close below the lower boundary would weaken it."
+            : "A downward lead-in is consolidating between "
+              + formatAnalysisPrice(triangle.relevantPriceLevels.lowerBoundary) + " and "
+              + formatAnalysisPrice(triangle.relevantPriceLevels.upperBoundary)
+              + ". A close below the lower boundary would confirm continuation; a close above the upper boundary would weaken it.",
           reasoning: triangle.reasoning + " It followed a " + (move * 100).toFixed(2)
             + "% lead-in move, which is consistent with a possible pennant structure.",
         });

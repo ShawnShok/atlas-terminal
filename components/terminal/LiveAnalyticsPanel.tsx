@@ -358,6 +358,7 @@ function patternCandidates(
     volumeConfirmation: detection.volumeConfirmation
       ? "confirmed"
       : volumeAvailable ? "not-confirmed" : "inconclusive",
+    analysis: detection.analysis,
     reasoning: [detection.reasoning],
   }));
 }

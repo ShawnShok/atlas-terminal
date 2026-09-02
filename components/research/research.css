@@ -674,6 +674,9 @@
 .research-volume-status.status-not-confirmed { border-color: #5d2631; color: var(--red); }
 .research-volume-status.status-inconclusive { border-color: #5a4720; color: var(--amber); }
 .research-pattern-grid h3 { margin: 15px 0; color: #c3cdd6; font-size: 11px; text-transform: uppercase; }
+.research-pattern-analysis { margin: -3px 0 12px; padding: 8px 9px; border-left: 2px solid #315b7b; background: #0d151e; }
+.research-pattern-analysis > span { display: block; margin-bottom: 4px; color: var(--blue); font-size: 6px; letter-spacing: .08em; }
+.research-pattern-analysis > p { margin: 0; color: #93a4b4; font: 8px/1.55 var(--sans); }
 .research-confidence { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
 .research-confidence span { color: var(--dim); font-size: 7px; }
 .research-confidence strong { color: var(--blue); font-size: 8px; }

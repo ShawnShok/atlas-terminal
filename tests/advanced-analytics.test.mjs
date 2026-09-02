@@ -49,6 +49,8 @@ test("news-price timeline supports pointer, keyboard, marker, and table interact
 
 test("pattern cards disclose developing versus confirmed phase", () => {
   assert.match(analyticsTerminalSource, /phase-\$\{candidate\.phase\}/);
+  assert.match(analyticsTerminalSource, /<p>\{candidate\.analysis\}<\/p>/);
+  assert.match(researchCssSource, /\.research-pattern-analysis/);
   assert.match(liveAnalyticsSource, /Developing setups are separated from fresh patterns confirmed by a closing neckline break/);
 });
 
@@ -119,6 +121,9 @@ test("experimental pattern detection returns confidence, levels, reasoning, and 
   assert.equal(doubleBottom.phase, "developing");
   assert.ok(doubleBottom.confidence > 0 && doubleBottom.confidence < 1);
   assert.equal(typeof doubleBottom.relevantPriceLevels.support, "number");
+  assert.match(doubleBottom.analysis, /close above.*neckline would confirm/i);
+  assert.match(doubleBottom.analysis, /would weaken/i);
+  assert.ok(detections.every(({ analysis }) => typeof analysis === "string" && analysis.length > 40));
   assert.match(doubleBottom.reasoning, /two separated lows/i);
   assert.match(doubleBottom.disclaimer, /not an investment recommendation/i);
 });
@@ -157,6 +162,8 @@ test("fresh double tops require a closing neckline break and keep the confirmati
   assert.ok(doubleTop);
   assert.equal(doubleTop.phase, "confirmed");
   assert.equal(doubleTop.detectedAt, bars[10].timestamp);
+  assert.match(doubleTop.analysis, /closed below.*neckline/i);
+  assert.match(doubleTop.analysis, /close back above.*would weaken/i);
   assert.match(doubleTop.reasoning, /neckline was broken on a closing basis/i);
 });
 

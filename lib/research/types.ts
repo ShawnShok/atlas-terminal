@@ -441,6 +441,7 @@ export interface PatternCandidate {
   readonly detectedAt: string;
   readonly priceLevels: readonly PatternPriceLevel[];
   readonly volumeConfirmation: "confirmed" | "not-confirmed" | "inconclusive";
+  readonly analysis: string;
   readonly reasoning: readonly string[];
 }
 

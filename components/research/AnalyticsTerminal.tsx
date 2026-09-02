@@ -322,6 +322,7 @@ export function PatternResearch({ candidates, onTickerSelect }: PatternResearchP
             </div>
           </header>
           <h3>{candidate.pattern.replaceAll("-", " ")}</h3>
+          <div className="research-pattern-analysis"><span>QUICK ANALYSIS</span><p>{candidate.analysis}</p></div>
           <div className="research-confidence"><span>MODEL CONFIDENCE</span><strong>{formatPercent(candidate.confidence * 100, 0)}</strong><i><b style={{ width: `${Math.max(0, Math.min(100, candidate.confidence * 100))}%` }} /></i></div>
           <dl>{candidate.priceLevels.map((level) => <div key={level.label}><dt>{level.label}</dt><dd>{formatCurrency(level.price)}</dd></div>)}</dl>
           <ul>{candidate.reasoning.map((reason) => <li key={reason}>{reason}</li>)}</ul>
