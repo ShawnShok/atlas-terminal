@@ -397,7 +397,7 @@
 .research-option-chain td { padding-inline: 5px; text-align: right; }
 .research-option-chain .research-option-groups th { top: 0; z-index: 3; text-align: center; color: #8da1b4; }
 .research-option-chain thead tr:nth-child(2) th { top: 25px; }
-.research-option-chain .research-strike { position: sticky; left: 50%; z-index: 1; min-width: 72px; background: #111923; color: var(--amber); text-align: center; }
+.research-option-chain .research-strike { min-width: 72px; background: #111923; color: var(--amber); text-align: center; }
 .research-option-chain .option-itm { background: rgba(59, 158, 255, .07); }
 .research-option-chain .option-atm { background: rgba(245, 184, 61, .14); color: #d5b264; }
 .research-option-chain .option-otm { color: #6a7887; }

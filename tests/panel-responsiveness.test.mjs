@@ -60,3 +60,9 @@ test("red and green option spark bars stay clipped inside their chart", () => {
   assert.match(research, /\.research-contract-chart > span > i\s*\{[^}]*position:\s*absolute;[^}]*var\(--bar-offset\)[^}]*var\(--bar-height\)/);
   assert.doesNotMatch(research, /\.research-contract-chart i\s*\{[^}]*margin-bottom:/);
 });
+
+test("option-chain strike cells move with the table during horizontal scrolling", () => {
+  assert.match(research, /\.research-option-chain \.research-strike\s*\{[^}]*min-width:\s*72px;/);
+  assert.doesNotMatch(research, /\.research-option-chain \.research-strike\s*\{[^}]*position:\s*sticky;/);
+  assert.doesNotMatch(research, /\.research-option-chain \.research-strike\s*\{[^}]*left:\s*50%;/);
+});

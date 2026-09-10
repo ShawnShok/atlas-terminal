@@ -287,7 +287,7 @@ export function OptionChain({ rows, hasContracts, quoteAvailability, selectedCon
       <table className={`research-table research-option-chain${showQuoteColumns ? "" : " quotes-unavailable"}`}>
         <caption className="research-sr-only">Option chain with calls and puts by strike</caption>
         <thead>
-          <tr className="research-option-groups"><th colSpan={sideColumnCount}>CALLS</th><th rowSpan={2}>STRIKE</th><th colSpan={sideColumnCount}>PUTS</th></tr>
+          <tr className="research-option-groups"><th colSpan={sideColumnCount}>CALLS</th><th rowSpan={2} className="research-strike">STRIKE</th><th colSpan={sideColumnCount}>PUTS</th></tr>
           <tr>
             {columns.map((column) => <th className={`option-chain-${column.key}`} key={`call-${column.key}`}>{column.label}</th>)}
             {columns.map((column) => <th className={`option-chain-${column.key}`} key={`put-${column.key}`}>{column.label}</th>)}
