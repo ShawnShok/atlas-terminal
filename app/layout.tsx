@@ -21,6 +21,16 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     applicationName: BRAND.productName,
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/favicon.svg", type: "image/svg+xml" },
+        { url: "/app-icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/app-icon-192.png", sizes: "192x192", type: "image/png" }],
+    },
+    appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: BRAND.productName },
+    other: { "mobile-web-app-capable": "yes" },
     robots: { index: false, follow: false },
     openGraph: { title, description, type: "website", siteName: BRAND.productName, images: [{ url: imageUrl, width: 1733, height: 907, alt: `${BRAND.productName} private financial research interface` }] },
     twitter: { card: "summary_large_image", title, description, images: [imageUrl] },

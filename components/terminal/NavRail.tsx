@@ -17,6 +17,7 @@ import {
   Star,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { InstallAppButton } from "./InstallAppButton";
 
 interface NavItem {
   id: string;
@@ -67,6 +68,7 @@ export function NavRail({ collapsed, activeId, onToggle, onNavigate }: NavRailPr
           );
         })}
       </nav>
+      <InstallAppButton collapsed={collapsed} />
       <button
         className="nav-collapse"
         type="button"
