@@ -12,6 +12,7 @@ import {
   ListFilter,
   Newspaper,
   PanelLeftClose,
+  Sparkles,
   Settings,
   SlidersHorizontal,
   Star,
@@ -27,6 +28,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "home", label: "Home", icon: House },
+  { id: "copilot", label: "AI Copilot", icon: Sparkles },
   { id: "markets", label: "Markets", icon: Gauge },
   { id: "scanner", label: "Scanner", icon: ListFilter },
   { id: "news", label: "News", icon: Newspaper },

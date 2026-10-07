@@ -17,6 +17,7 @@ import {
   type WorkspaceNode,
 } from "@/lib/workspace/model";
 import { CommandPalette } from "./CommandPalette";
+import { AtlasAssistant } from "./AtlasAssistant";
 import { NavRail } from "./NavRail";
 import { TopBar } from "./TopBar";
 import { Workspace } from "./Workspace";
@@ -93,6 +94,7 @@ export function TerminalShell() {
   const [activeTicker, setActiveTicker] = useState("NVDA");
   const [syncTicker, setSyncTicker] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [activity, setActivity] = useState<string[]>([]);
   const [recentTickers, setRecentTickers] = useState<string[]>([]);
@@ -356,6 +358,7 @@ export function TerminalShell() {
         <NavRail
           collapsed={sidebarCollapsed}
           activeId={(() => {
+            if (assistantOpen) return "copilot";
             const view = panels.find((panel) => panel.id === activePanelId)?.view;
             if (view === "dashboard") return "home";
             if (view === "market" || view === "movers" || view === "analytics") return "markets";
@@ -373,6 +376,10 @@ export function TerminalShell() {
           })()}
           onToggle={() => setSidebarCollapsed((collapsed) => !collapsed)}
           onNavigate={(item) => {
+            if (item.id === "copilot") {
+              setAssistantOpen((open) => !open);
+              return;
+            }
             const navigation: Readonly<Record<string, PanelView>> = {
               home: "dashboard",
               markets: "market",
@@ -454,6 +461,16 @@ export function TerminalShell() {
       </footer>
 
       {commandOpen && <CommandPalette open onClose={() => setCommandOpen(false)} onRun={executeCommand} />}
+      <AtlasAssistant
+        open={assistantOpen}
+        ticker={activeTicker}
+        activeView={activePanel?.view ?? "dashboard"}
+        onClose={() => setAssistantOpen(false)}
+        onNavigate={(view) => {
+          setPanelView(activePanelId, view);
+          setAssistantOpen(false);
+        }}
+      />
       {toast && <aside className="terminal-toast" role="status"><div><strong>{toast.title}</strong><span>{toast.message}</span></div></aside>}
     </main>
   );
