@@ -1,6 +1,8 @@
 {
   "name": "atlas-terminal",
   "version": "0.1.0",
+  "description": "An open-source, keyboard-first financial research terminal for stocks, options, news, scanners, analytics, and private research workflows.",
+  "license": "MIT",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

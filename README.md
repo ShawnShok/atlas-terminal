@@ -1,8 +1,51 @@
 # ATLAS Terminal
 
-ATLAS Terminal is a private, keyboard-first financial research workstation. The repository now contains the integrated research workflows delivered across Phases 1–8: the terminal shell, live or deterministic market data, stocks and charts, news, corporate events, financials, options research, scanners, advanced analytics, and PostgreSQL-backed personal research records.
+ATLAS Terminal is an open-source, keyboard-first financial research workstation for stocks, options, news, corporate events, financials, scanners, technical analysis, and private research workflows. It combines a Bloomberg-inspired multi-panel interface with server-side market-data adapters, deterministic offline fixtures, an options volatility surface, chart-pattern analysis, comparison tools, and optional PostgreSQL persistence.
 
-It is research software. It does not place trades, route orders, guarantee outcomes, or turn correlations into recommendations. Mock data is always labeled, and live modules retain provider freshness and quality metadata.
+![ATLAS Terminal interface](public/og.png)
+
+The application is designed for research, not execution. It does not place trades, route orders, guarantee outcomes, or turn correlations into recommendations. Mock data is always labeled, and live modules retain provider freshness and quality metadata.
+
+## Highlights
+
+- Resizable multi-panel terminal workspaces with keyboard commands and synchronized ticker navigation
+- Live or deterministic stock charts, indicators, financial statements, Benzinga news, and TMX corporate events
+- Options chains, Greeks, strategy payoffs, unusual-activity research, and an implied-volatility surface
+- Configurable scanners, market heatmaps, breadth, chart-pattern analysis, catalyst timelines, and ticker comparison
+- Saved notes, alerts, layouts, scanners, and watchlists through an optional PostgreSQL data layer
+- Installable PWA experience with a standalone app window on supported browsers
+- Server-only provider credentials, strict response validation, bounded caches, and explicit stale/unavailable states
+
+## Quick start
+
+You can run the full interface without any API key by using the checked-in deterministic mock mode:
+
+```bash
+git clone https://github.com/ShawnShok/atlas-terminal.git
+cd atlas-terminal
+corepack enable
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
+Open the local URL printed by the development server. Node.js 22.13 or newer is required.
+
+## API keys and external services
+
+| Credential or service | Required? | What it enables | Where to configure it |
+| --- | --- | --- | --- |
+| Massive API key | Only for live market data | Stocks, aggregates, snapshots, options, financials, Benzinga news, and TMX corporate events, subject to the key's plan entitlements | `MASSIVE_API_KEY` in `.env.local` or a deployment secret manager |
+| PostgreSQL connection URL | Optional | Durable notes, alerts, saved workspaces, watchlists, scanners, and settings | `DATABASE_URL` in `.env.local` or a deployment secret manager |
+| OpenAI API key | Not currently used | The checked-in ATLAS Copilot builds grounded summaries from terminal data without calling an external language model | Do not add one unless you extend the Copilot with a model-backed service |
+
+One Massive key covers the Massive, Benzinga, and TMX endpoints used by this application; separate keys are not needed. Access to individual datasets still depends on the plan attached to that key. Never commit `.env.local`, paste credentials into browser code, or prefix a server secret with `NEXT_PUBLIC_` or `VITE_`.
+
+The repository includes a production Sign in with ChatGPT boundary for its Sites deployment. Local development works without that hosted identity layer. If you deploy elsewhere, replace or adapt the production authentication boundary before exposing personal-data routes.
+
+## Open-source license
+
+ATLAS Terminal is available under the [MIT License](LICENSE). Contributions and forks are welcome. Please review [SECURITY.md](SECURITY.md) before reporting a credential or authentication issue.
 
 ## Production handoff status
 

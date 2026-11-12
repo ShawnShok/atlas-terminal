@@ -78,16 +78,23 @@ export function AtlasAssistant({ open, ticker, activeView, onClose, onNavigate }
   ], [normalizedTicker]);
 
   useEffect(() => {
+    let restored: readonly ChatMessage[] | undefined;
     try {
       const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]") as unknown;
       if (Array.isArray(stored)) {
         const valid = stored.filter(isStoredMessage).slice(-20);
-        if (valid.length) setMessages(valid);
+        if (valid.length) restored = valid;
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     }
-    setHydrated(true);
+
+    const restoreTimer = window.setTimeout(() => {
+      if (restored) setMessages(restored);
+      setHydrated(true);
+    }, 0);
+
+    return () => window.clearTimeout(restoreTimer);
   }, []);
 
   useEffect(() => {
